@@ -7,6 +7,13 @@ docker run -d -p 9118:9118 \
 -v /local_folder/init.conf:/home/init.conf \
 --restart always --name lampac immisterio/lampac 
 ```
+```
+docker run -d \
+--restart always \
+--name lampac immisterio/lampac \
+-p 9118:9118 \
+-v /local_folder/init.conf:/home/init.conf \
+```
 
 # Установка на linux
 спасибо @nikk, @Denis
