@@ -1,9 +1,9 @@
 # Telegram группа
 https://t.me/+TIXtgvGBBOc3ZTUy
 
-# Запуск в Docker
+# Запуск в Docker с возможностью редактирования файла init.conf
 ```
-docker run -d -p 9118:9118 --restart always --name lampac immisterio/lampac
+docker run -d -p 9118:9118 --restart always --name lampac immisterio/lampac -v /local_folder/init.conf:/home/init.conf 
 ```
 
 # Установка на linux
