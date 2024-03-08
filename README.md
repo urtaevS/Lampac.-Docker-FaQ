@@ -3,7 +3,9 @@ https://t.me/+TIXtgvGBBOc3ZTUy
 
 # Запуск в Docker с возможностью редактирования файла init.conf
 ```
-docker run -d -p 9118:9118 --restart always --name lampac immisterio/lampac -v /local_folder/init.conf:/home/init.conf 
+docker run -d -p 9118:9118 \
+-v /local_folder/init.conf:/home/init.conf \
+--restart always --name lampac immisterio/lampac 
 ```
 
 # Установка на linux
