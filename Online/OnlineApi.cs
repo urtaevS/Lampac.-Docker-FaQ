@@ -16,6 +16,7 @@ using System.IO;
 using Shared.Model.Online;
 using Shared.Model.Base;
 using Microsoft.Extensions.Caching.Memory;
+using Shared.Engine;
 
 namespace Lampac.Controllers
 {
@@ -31,14 +32,26 @@ namespace Lampac.Controllers
         [Route("online.js")]
         public ActionResult Online()
         {
-            if (!memoryCache.TryGetValue("ApiController:online.js", out string file))
+            var init = AppInit.conf.online;
+
+            string file = FileCache.ReadAllText("plugins/online.js");
+            file = file.Replace("{localhost}", host);
+
+            if (init.component != "lampac")
             {
-                file = IO.File.ReadAllText("plugins/online.js");
-                memoryCache.Set("ApiController:online.js", file, DateTime.Now.AddMinutes(5));
+                file = file.Replace("component: 'lampac'", $"component: '{init.component}'");
+                file = file.Replace("'lampac', component", $"'{init.component}', component");
+                file = file.Replace("window.lampac_plugin", $"window.{init.component}_plugin");
             }
 
-            file = file.Replace("http://127.0.0.1:9118", host);
-            file = file.Replace("{localhost}", host);
+            if (!init.version)
+            {
+                file = Regex.Replace(file, "version: \\'[^\\']+\\'", "version: ''");
+                file = file.Replace("manifst.name, \" v\"", "manifst.name, \" \"");
+            }
+
+            file = file.Replace("name: 'Lampac'", $"name: '{init.name}'");
+            file = Regex.Replace(file, "description: \\'([^\\']+)?\\'", $"description: '{init.description}'");
 
             return Content(file, contentType: "application/javascript; charset=utf-8");
         }
@@ -47,15 +60,9 @@ namespace Lampac.Controllers
         #region lite.js
         [HttpGet]
         [Route("lite.js")]
-        async public Task<ActionResult> Lite()
+        public ActionResult Lite()
         {
-            if (!memoryCache.TryGetValue("ApiController:lite.js", out string file))
-            {
-                file = await IO.File.ReadAllTextAsync("plugins/lite.js");
-                memoryCache.Set("ApiController:lite.js", file, DateTime.Now.AddMinutes(5));
-            }
-
-            return Content(file.Replace("{localhost}", $"{host}/lite"), contentType: "application/javascript; charset=utf-8");
+            return Content(FileCache.ReadAllText("plugins/lite.js").Replace("{localhost}", $"{host}/lite"), contentType: "application/javascript; charset=utf-8");
         }
         #endregion
 
@@ -226,8 +233,8 @@ namespace Lampac.Controllers
                     return error($"Не удалось найти онлайн для {(serial == 1 ? "сериала" : "фильма")}");
                 }
 
-                string online = res.online?.Replace("{localhost}", $"{host}/lite") ?? string.Empty;
-                json = "{"+ $"\"ready\":{res.ready.ToString().ToLower()},\"tasks\":{res.tasks},\"online\":[{Regex.Replace(online, ",$", "")}]" + "}";
+                string online = res.online?.Replace("{localhost}", host) ?? string.Empty;
+                json = "{"+ $"\"ready\":{res.ready.ToString().ToLower()},\"tasks\":{res.tasks},\"online\":[{online}]" + "}";
             }
 
             return Content(json ?? "{\"ready\":false,\"tasks\":0,\"online\":[]}", contentType: "application/javascript; charset=utf-8");
@@ -238,28 +245,25 @@ namespace Lampac.Controllers
         [Route("lite/events")]
         async public Task<ActionResult> Events(long id, string imdb_id, long kinopoisk_id, string title, string original_title, string original_language, int year, string source, int serial = -1, bool life = false, string account_email = null)
         {
-            string online = string.Empty;
+            var online = new List<(string name, string url, string plugin, int index)>(20);
             bool isanime = original_language == "ja";
 
             var conf = AppInit.conf;
 
             if (AppInit.modules != null)
             {
-                foreach (var item in AppInit.modules)
+                foreach (var item in AppInit.modules.Where(i => i.online != null))
                 {
-                    if (item.online.enable)
+                    try
                     {
-                        try
+                        if (item.assembly.GetType(item.online) is Type t && t.GetMethod("Events") is MethodInfo m)
                         {
-                            if (item.assembly.GetType(item.online.@namespace) is Type t && t.GetMethod("Events") is MethodInfo m)
-                            {
-                                string result = (string)m.Invoke(null, new object[] { host, account_email, id, imdb_id, kinopoisk_id, title, original_title, original_language, year, source, serial });
-                                if (!string.IsNullOrWhiteSpace(result))
-                                    online += result;
-                            }
+                            var result = (List<(string name, string url, string plugin, int index)>)m.Invoke(null, new object[] { host, id, imdb_id, kinopoisk_id, title, original_title, original_language, year, source, serial, account_email });
+                            if (result != null && result.Count > 0)
+                                online.AddRange(result);
                         }
-                        catch { }
                     }
+                    catch { }
                 }
             }
 
@@ -269,9 +273,9 @@ namespace Lampac.Controllers
                 {
                     string url = init.overridehost;
                     if (string.IsNullOrEmpty(url))
-                        url = "{localhost}/" + (plugin ?? name.ToLower()) + arg_url;
+                        url = "{localhost}/lite/" + (plugin ?? name.ToLower()) + arg_url;
 
-                    online += "{\"name\":\"" + $"{init.displayname ?? name}{arg_title}" + "\",\"url\":\"" + url + "\"},";
+                    online.Add(($"{init.displayname ?? name}{arg_title}", url, plugin ?? name.ToLower(), init.displayindex > 0 ? init.displayindex : online.Count));
                 }
             }
 
@@ -287,7 +291,7 @@ namespace Lampac.Controllers
                 send("AniMedia", conf.AniMedia);
             }
 
-            if ((serial == -1 || serial == 0) && kinopoisk_id > 0)
+            if (!isanime && kinopoisk_id > 0)
                 send("VoKino", conf.VoKino);
 
             send("Filmix", conf.Filmix, arg_url: (source == "filmix" ? $"?postid={id}" : ""));
@@ -298,18 +302,26 @@ namespace Lampac.Controllers
             send("Rezka", conf.Rezka);
 
             if (kinopoisk_id > 0)
+            {
                 send("Zetflix", conf.Zetflix);
+                send("VDBmovies", conf.VDBmovies, "vdbmovies");
+            }
 
             send("VideoCDN", conf.VCDN, "vcdn");
-
             send("Kinobase", conf.Kinobase);
 
             if (serial == -1 || serial == 0)
                 send("iRemux", conf.iRemux, "remux");
 
             send("Voidboost", conf.Voidboost);
-            send("Ashdi (UKR)", conf.Ashdi, "ashdi");
+
+            if (kinopoisk_id > 0)
+                send("Ashdi (UKR)", conf.Ashdi, "ashdi");
+
             send("Eneyida (UKR)", conf.Eneyida, "eneyida");
+
+            if (!isanime)
+                send("Kinoukr (UKR)", conf.Kinoukr, "kinoukr");
 
             if (kinopoisk_id > 0)
                 send("VideoDB", conf.VideoDB);
@@ -335,7 +347,7 @@ namespace Lampac.Controllers
                 send("IframeVideo", conf.IframeVideo);
 
             if (!life && conf.litejac)
-                online += "{\"name\":\"Jackett\",\"url\":\"{localhost}/jac\"},";
+                online.Add(("Jackett", "{localhost}/lite/jac", "jac", online.Count));
 
             #region checkOnlineSearch
             bool chos = conf.online.checkOnlineSearch && id > 0;
@@ -351,23 +363,13 @@ namespace Lampac.Controllers
                 string memkey = checkOnlineSearchKey(id, source);
                 if (!memoryCache.TryGetValue(memkey, out (bool ready, int tasks, string online) cache) || !conf.multiaccess)
                 {
-                    memoryCache.Set(memkey, cache, DateTime.Now.AddSeconds(15));
+                    memoryCache.Set(memkey, cache, DateTime.Now.AddSeconds(20));
 
                     var tasks = new List<Task>();
                     var links = new ConcurrentBag<(string code, int index, bool work)>();
 
-                    var match = Regex.Match(online, "\\{\"name\":\"([^\"]+)\",\"url\":\"(\\{localhost\\}|https?://[^/]+/lite)/([^\"]+)\"\\},");
-                    while (match.Success)
-                    {
-                        string _name = match.Groups[1].Value;
-                        string _serv = match.Groups[2].Value;
-                        string _plugin = match.Groups[3].Value;
-
-                        if (!string.IsNullOrWhiteSpace(_name) && !string.IsNullOrWhiteSpace(_plugin))
-                            tasks.Add(checkSearch(links, tasks, tasks.Count, _name, _plugin, _serv, id, imdb_id, kinopoisk_id, title, original_title, original_language, source, year, serial, life));
-
-                        match = match.NextMatch();
-                    }
+                    foreach (var o in online)
+                        tasks.Add(checkSearch(links, tasks, o.index, o.name, o.url, o.plugin, id, imdb_id, kinopoisk_id, title, original_title, original_language, source, year, serial, life));
 
                     if (life)
                         return Content("{\"life\":true}", contentType: "application/javascript; charset=utf-8");
@@ -376,19 +378,20 @@ namespace Lampac.Controllers
 
                     cache.ready = true;
                     cache.tasks = tasks.Count;
-                    cache.online = string.Join("", links.OrderByDescending(i => i.work).ThenBy(i => i.index).Select(i => i.code));
+                    cache.online = string.Join(",", links.OrderByDescending(i => i.work).ThenBy(i => i.index).Select(i => i.code));
 
-                    memoryCache.Set(memkey, cache, DateTime.Now.AddMinutes(10));
+                    memoryCache.Set(memkey, cache, DateTime.Now.AddMinutes(5));
                 }
 
                 if (life)
                     return Content("{\"life\":true}", contentType: "application/javascript; charset=utf-8");
 
-                online = cache.online;
+                return Content($"[{cache.online.Replace("{localhost}", host)}]", contentType: "application/javascript; charset=utf-8");
             }
             #endregion
 
-            return Content($"[{Regex.Replace(online, ",$", "").Replace("{localhost}", $"{host}/lite")}]", contentType: "application/javascript; charset=utf-8");
+            string online_result = string.Join(",", online.OrderBy(i => i.index).Select(i => "{\"name\":\"" + i.name + "\",\"url\":\"" + i.url + "\"}"));
+            return Content($"[{online_result.Replace("{localhost}", host)}]", contentType: "application/javascript; charset=utf-8");
         }
         #endregion
 
@@ -396,56 +399,55 @@ namespace Lampac.Controllers
         #region checkSearch
         static string checkOnlineSearchKey(long id, string source) => $"ApiController:checkOnlineSearch:{id}:{source?.Replace("tmdb", "")?.Replace("cub", "")}";
 
-        async Task checkSearch(ConcurrentBag<(string code, int index, bool work)> links, List<Task> tasks, int index, string name, string uri, string serv,
+        async Task checkSearch(ConcurrentBag<(string code, int index, bool work)> links, List<Task> tasks, int index, string name, string uri, string plugin,
                                long id, string imdb_id, long kinopoisk_id, string title, string original_title, string original_language, string source, int year, int serial, bool life)
         {
-            bool isLocalhost = serv == "{localhost}";
-            string srq = isLocalhost ? $"http://{AppInit.conf.localhost}:{AppInit.conf.listenport}/lite" : serv;
-            var header = isLocalhost ? HeadersModel.Init("xhost", host) : null;
+            string srq = uri.Replace("{localhost}", $"http://{AppInit.conf.localhost}:{AppInit.conf.listenport}");
+            var header = uri.Contains("{localhost}") ? HeadersModel.Init("xhost", host) : null;
 
-            string res = await HttpClient.Get($"{srq}/{uri}{(uri.Contains("?") ? "&" : "?")}id={id}&imdb_id={imdb_id}&kinopoisk_id={kinopoisk_id}&title={HttpUtility.UrlEncode(title)}&original_title={HttpUtility.UrlEncode(original_title)}&original_language={original_language}&source={source}&year={year}&serial={serial}&checksearch=true", timeoutSeconds: 10, headers: header);
+            string res = await HttpClient.Get($"{srq}/{(srq.Contains("?") ? "&" : "?")}id={id}&imdb_id={imdb_id}&kinopoisk_id={kinopoisk_id}&title={HttpUtility.UrlEncode(title)}&original_title={HttpUtility.UrlEncode(original_title)}&original_language={original_language}&source={source}&year={year}&serial={serial}&checksearch=true", timeoutSeconds: 10, headers: header);
 
-            bool work = !string.IsNullOrWhiteSpace(res) && res.Contains("data-json=");
+            if (string.IsNullOrEmpty(res))
+                res = string.Empty;
+
+            bool rch = res.Contains("\"rch\":true");
+            bool work = res.Contains("data-json=") || rch;
 
             string quality = string.Empty;
-            string balanser = uri.Split("?")[0];
+            string balanser = plugin;
 
             #region определение качества
             if (work && life)
             {
-                if (serial == -1 || serial == 0)
+                foreach (string q in new string[] { "2160", "1080", "720", "480", "360" })
                 {
-                    foreach (string q in new string[] { "2160", "1080", "720", "480", "360" })
+                    if (res.Contains("<!--q:"))
                     {
-                        if (res.Contains($"\"{q}p\"") || res.Contains($">{q}p<") || res.Contains($"<!--{q}p-->"))
-                        {
-                            if (q == "2160")
-                            {
-                                if (balanser == "kinopub")
-                                    quality = " - 4K HDR";
-                                else
-                                {
-                                    quality = res.Contains("HDR") ? " - 4K HDR" : " - 4K";
-                                }
-                            }
-                            else
-                            {
-                                quality = $" - {q}p";
-                            }
-
-                            break;
-                        }
+                        quality = " - " + Regex.Match(res, "<!--q:([^>]+)-->").Groups[1].Value;
+                        break;
+                    }
+                    else if (res.Contains($"\"{q}p\"") || res.Contains($">{q}p<") || res.Contains($"<!--{q}p-->"))
+                    {
+                        quality = $" - {q}p";
+                        break;
                     }
                 }
 
-                if (quality == string.Empty && balanser == "vokino")
-                    quality = res.Contains("4K HDR") ? " - 4K HDR" : res.Contains("4K ") ? " - 4K" : string.Empty;
+                if (quality == "2160")
+                    quality = res.Contains("HDR") ? " - 4K HDR" : " - 4K";
+
+                if (balanser == "filmix")
+                    quality = AppInit.conf.Filmix.pro ? quality : " - 480p";
+
+                if (balanser == "collaps")
+                    quality = AppInit.conf.Collaps.dash ? " ~ 1080p" : " ~ 720p";
 
                 if (quality == string.Empty)
                 {
                     switch (balanser)
                     {
                         case "fxapi":
+                        case "filmix":
                         case "kinopub":
                         case "vokino":
                         case "rezka":
@@ -459,6 +461,7 @@ namespace Lampac.Controllers
                         case "zetflix":
                         case "vcdn":
                         case "eneyida":
+                        case "kinoukr":
                         case "hdvb":
                         case "anilibria":
                         case "animedia":
@@ -466,6 +469,7 @@ namespace Lampac.Controllers
                         case "iframevideo":
                         case "animego":
                         case "lostfilmhd":
+                        case "vdbmovies":
                             quality = " ~ 1080p";
                             break;
                         case "voidboost":
@@ -487,18 +491,21 @@ namespace Lampac.Controllers
                             break;
                     }
 
-                    if (balanser == "filmix")
-                        quality = AppInit.conf.Filmix.pro ? " ~ 2160p" : " - 480p";
-
-                    if (balanser == "collaps")
-                        quality = AppInit.conf.Collaps.dash ? " ~ 1080p" : " ~ 720p";
+                    if (balanser == "vokino")
+                        quality = res.Contains("4K HDR") ? " - 4K HDR" : res.Contains("4K ") ? " - 4K" : quality;
                 }
             }
             #endregion
 
-            links.Add(("{" + $"\"name\":\"{name + quality}\",\"url\":\""+(isLocalhost ? "{localhost}" : serv) +$"/{uri}\",\"index\":{index},\"show\":{work.ToString().ToLower()},\"balanser\":\"{balanser}\"" + "},", index, work));
+            if (!name.Contains(" - ") && !string.IsNullOrEmpty(quality))
+            {
+                name = Regex.Replace(name, " ~ .*$", "");
+                name += quality;
+            }
 
-            memoryCache.Set(checkOnlineSearchKey(id, source), (links.Count == tasks.Count, tasks.Count, string.Join("", links.OrderByDescending(i => i.work).ThenBy(i => i.index).Select(i => i.code))), DateTime.Now.AddMinutes(10));
+            links.Add(("{" + $"\"name\":\"{name}\",\"url\":\"{uri}\",\"index\":{index},\"show\":{work.ToString().ToLower()},\"balanser\":\"{balanser}\",\"rch\":{rch.ToString().ToLower()}" + "}", index, work));
+
+            memoryCache.Set(checkOnlineSearchKey(id, source), (links.Count == tasks.Count, tasks.Count, string.Join(",", links.OrderByDescending(i => i.work).ThenBy(i => i.index).Select(i => i.code))), DateTime.Now.AddMinutes(5));
         }
         #endregion
     }

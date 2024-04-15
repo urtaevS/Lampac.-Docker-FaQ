@@ -35,11 +35,11 @@ namespace Lampac.Controllers.Eporner
                 if (playlists.Count == 0)
                     return res.Fail("playlists");
 
-                return res.Success(playlists);
+                return playlists;
             });
 
             if (!cache.IsSuccess)
-                return OnError(cache.ErrorMsg, proxyManager, string.IsNullOrEmpty(search));
+                return OnError(cache.ErrorMsg, proxyManager, pg > 1 && string.IsNullOrEmpty(search));
 
             return OnResult(cache.Value, string.IsNullOrEmpty(search) ? EpornerTo.Menu(host, sort, c) : null);
         }

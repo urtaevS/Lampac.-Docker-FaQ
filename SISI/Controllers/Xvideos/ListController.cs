@@ -3,7 +3,6 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Lampac.Engine.CORE;
 using Lampac.Models.SISI;
-using Microsoft.Extensions.Caching.Memory;
 using Shared.Engine.SISI;
 using Shared.Engine.CORE;
 using SISI;
@@ -39,7 +38,7 @@ namespace Lampac.Controllers.Xvideos
                 playlists = XvideosTo.Playlist($"{host}/xds/vidosik", html);
 
                 if (playlists.Count == 0)
-                    return OnError("playlists", proxyManager, string.IsNullOrEmpty(search));
+                    return OnError("playlists", proxyManager, pg > 1 && string.IsNullOrEmpty(search));
 
                 proxyManager.Success();
                 hybridCache.Set(memKey, playlists, cacheTime(10));

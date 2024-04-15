@@ -4,6 +4,7 @@ using System.Text.Json;
 using Shared.Model.Online.VideoCDN;
 using System.Text;
 using Shared.Model.Templates;
+using Lampac.Models.LITE;
 
 namespace Shared.Engine.Online
 {
@@ -13,22 +14,32 @@ namespace Shared.Engine.Online
         string? host;
         string iframeapihost;
         string apihost;
-        string token;
+        string? token;
         bool usehls;
         Func<string, string, ValueTask<string?>> onget;
-        Func<string, string> onstreamfile;
+        Func<string, string>? onstreamfile;
         Func<string, string>? onlog;
+        Action? requesterror;
 
-        public VideoCDNInvoke(string? host, string iframeapihost, string apihost, string token, bool hls, Func<string, string, ValueTask<string?>> onget, Func<string, string> onstreamfile, Func<string, string>? onlog = null)
+        public string onstream(string stream)
+        {
+            if (onstreamfile == null)
+                return stream;
+
+            return onstreamfile.Invoke(stream);
+        }
+
+        public VideoCDNInvoke(OnlinesSettings init, Func<string, string, ValueTask<string?>> onget, Func<string, string>? onstreamfile, string? host = null, Func<string, string>? onlog = null, Action? requesterror = null)
         {
             this.host = host != null ? $"{host}/" : null;
-            this.iframeapihost = iframeapihost;
-            this.apihost = apihost;
-            this.token = token;
+            this.iframeapihost = init.corsHost();
+            this.apihost = init.cors(init.apihost);
+            this.token = init!.token;
             this.onget = onget;
             this.onstreamfile = onstreamfile;
             this.onlog = onlog;
-            usehls = hls;
+            usehls = init.hls;
+            this.requesterror = requesterror;
         }
         #endregion
 
@@ -42,7 +53,10 @@ namespace Shared.Engine.Online
 
             string? json = await onget.Invoke(uri, apihost);
             if (json == null)
+            {
+                requesterror?.Invoke();
                 return null;
+            }
 
             var root = JsonSerializer.Deserialize<SearchRoot>(json);
             if (root?.data == null || root.data.Count == 0)
@@ -88,7 +102,10 @@ namespace Shared.Engine.Online
             string args = kinopoisk_id > 0 ? $"kp_id={kinopoisk_id}&imdb_id={imdb_id}" : $"imdb_id={imdb_id}";
             string? content = await onget.Invoke($"{iframeapihost}?{args}", "https://kinogo.biz/82065-pchelovod.html");
             if (content == null)
+            {
+                requesterror?.Invoke();
                 return null;
+            }
 
             var result = new EmbedModel();
             result.type = Regex.Match(content, "id=\"videoType\" value=\"([^\"]+)\"").Groups[1].Value;
@@ -112,6 +129,7 @@ namespace Shared.Engine.Online
             }
 
             string files = Regex.Match(content, "id=\"(fs|files)\" value='([^\n\r]+)'>").Groups[2].Value;
+            result.quality = files.Contains("1080p") ? "1080p" : files.Contains("720p") ? "720p" : "480p";
 
             if (result.type is "movie" or "anime")
             {
@@ -194,7 +212,7 @@ namespace Shared.Engine.Online
                         else if (!usehls && link.Contains(".m3u"))
                             link = link.Replace(":hls:manifest.m3u8", "");
 
-                        streams.Insert(0, (onstreamfile.Invoke($"https:{link}"), $"{m.Groups[1].Value}p"));
+                        streams.Insert(0, (onstream($"https:{link}"), $"{m.Groups[1].Value}p"));
                     }
 
                     if (streams.Count == 0)
@@ -227,13 +245,15 @@ namespace Shared.Engine.Online
                                 seasons.Add(season.id);
                         }
 
+                        var tpl = new SeasonTpl(result.quality);
+
                         foreach (int id in seasons.OrderBy(s => s))
                         {
                             string link = host + $"lite/vcdn?kinopoisk_id={kinopoisk_id}&imdb_id={imdb_id}&title={enc_title}&original_title={enc_original_title}&s={id}";
-
-                            html.Append("<div class=\"videos__item videos__season selector " + (firstjson ? "focused" : "") + "\" data-json='{\"method\":\"link\",\"url\":\"" + link + "\"}'><div class=\"videos__season-layers\"></div><div class=\"videos__item-imgbox videos__season-imgbox\"><div class=\"videos__item-title videos__season-title\">" + $"{id} сезон" + "</div></div></div>");
-                            firstjson = false;
+                            tpl.Append($"{id} сезон", link);
                         }
+
+                        return tpl.ToHtml();
                     }
                     else
                     {
@@ -278,7 +298,7 @@ namespace Shared.Engine.Online
                                 else if (!usehls && link.Contains(".m3u"))
                                     link = link.Replace(":hls:manifest.m3u8", "");
 
-                                streams.Insert(0, (onstreamfile.Invoke($"https:{link}"), $"{m.Groups[1].Value}p"));
+                                streams.Insert(0, (onstream($"https:{link}"), $"{m.Groups[1].Value}p"));
                             }
 
                             if (streams.Count == 0)

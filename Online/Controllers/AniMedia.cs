@@ -3,7 +3,6 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Lampac.Engine.CORE;
 using System.Web;
-using Microsoft.Extensions.Caching.Memory;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
@@ -47,7 +46,7 @@ namespace Lampac.Controllers.LITE
                     }
 
                     if (catalog.Count == 0)
-                        return OnError(proxyManager);
+                        return OnError();
 
                     proxyManager.Success();
                     hybridCache.Set(memkey, catalog, cacheTime(40));
@@ -59,11 +58,7 @@ namespace Lampac.Controllers.LITE
                 var stpl = new SimilarTpl(catalog.Count);
 
                 foreach (var res in catalog)
-                {
-                    string link = $"{host}/lite/animedia?title={HttpUtility.UrlEncode(title)}&code={res.code}";
-
-                    stpl.Append(res.title, string.Empty, string.Empty, link);
-                }
+                    stpl.Append(res.title, string.Empty, string.Empty, $"{host}/lite/animedia?title={HttpUtility.UrlEncode(title)}&code={res.code}");
 
                 return Content(stpl.ToHtml(), "text/html; charset=utf-8");
                 #endregion
@@ -80,10 +75,12 @@ namespace Lampac.Controllers.LITE
                     if (!hybridCache.TryGetValue(memKey, out List<(string name, string uri)> links))
                     {
                         string news = await HttpClient.Get($"{init.corsHost()}/anime/{code}/1/1", timeoutSeconds: 8, proxy: proxyManager.Get(), headers: httpHeaders(init));
-                        string entryid = Regex.Match(news ?? "", "name=\"entry_id\" value=\"([0-9]+)\"").Groups[1].Value;
-
-                        if (string.IsNullOrWhiteSpace(entryid))
+                        if (news == null)
                             return OnError(proxyManager);
+
+                        string entryid = Regex.Match(news, "name=\"entry_id\" value=\"([0-9]+)\"").Groups[1].Value;
+                        if (string.IsNullOrEmpty(entryid))
+                            return OnError();
 
                         links = new List<(string, string)>();
 
@@ -97,7 +94,7 @@ namespace Lampac.Controllers.LITE
                         }
 
                         if (links.Count == 0)
-                            return OnError(proxyManager);
+                            return OnError();
 
                         proxyManager.Success();
                         hybridCache.Set(memKey, links, cacheTime(30));
@@ -133,7 +130,7 @@ namespace Lampac.Controllers.LITE
                         }
 
                         if (links.Count == 0)
-                            return OnError(proxyManager);
+                            return OnError();
 
                         proxyManager.Success();
                         hybridCache.Set(memKey, links, cacheTime(30));

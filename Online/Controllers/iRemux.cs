@@ -23,14 +23,15 @@ namespace Lampac.Controllers.LITE
                init.corsHost(),
                ongettourl => HttpClient.Get(init.cors(ongettourl), timeoutSeconds: 8, proxy: proxy, cookie: init.cookie, headers: httpHeaders(init)),
                (url, data) => HttpClient.Post(init.cors(url), data, timeoutSeconds: 8, proxy: proxy, cookie: init.cookie, headers: httpHeaders(init)),
-               streamfile => HostStreamProxy(init, streamfile, proxy: proxy, plugin: "remux")
+               streamfile => HostStreamProxy(init, streamfile, proxy: proxy, plugin: "remux"),
+               requesterror: () => proxyManager.Refresh()
             );
         }
         #endregion
 
         [HttpGet]
         [Route("lite/remux")]
-        async public Task<ActionResult> Index(string title, string original_title, int year)
+        async public Task<ActionResult> Index(string title, string original_title, int year, string href)
         {
             var init = AppInit.conf.iRemux;
 
@@ -42,11 +43,11 @@ namespace Lampac.Controllers.LITE
 
             var oninvk = InitRemuxInvoke();
 
-            string content = await InvokeCache($"remux:{title}:{original_title}:{year}", cacheTime(180), () => oninvk.Embed(title, original_title, year), proxyManager);
+            var content = await InvokeCache($"remux:{title}:{original_title}:{year}:{href}", cacheTime(180), () => oninvk.Embed(title, original_title, year, href), proxyManager);
             if (content == null)
-                return OnError(proxyManager);
+                return OnError();
 
-            return Content(oninvk.Html(content, title, original_title), "text/html; charset=utf-8");
+            return Content(oninvk.Html(content, title, original_title, year), "text/html; charset=utf-8");
         }
 
 
@@ -61,7 +62,7 @@ namespace Lampac.Controllers.LITE
 
             string weblink = await InvokeCache($"remux:view:{linkid}:{proxyManager.CurrentProxyIp}", cacheTime(20), () => oninvk.Weblink(linkid), proxyManager);
             if (weblink == null)
-                return OnError(proxyManager);
+                return OnError();
 
             return Content(oninvk.Movie(weblink, quality, title, original_title), "application/json; charset=utf-8");
         }

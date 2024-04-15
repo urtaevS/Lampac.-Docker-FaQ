@@ -6,6 +6,8 @@ using Online;
 using Shared.Engine.CORE;
 using Shared.Engine.Online;
 using System;
+using Lampac.Models.LITE.KinoPub;
+using Shared.Model.Online.KinoPub;
 
 namespace Lampac.Controllers.LITE
 {
@@ -25,6 +27,9 @@ namespace Lampac.Controllers.LITE
             {
                 var token_request = await HttpClient.Post<JObject>($"{init.corsHost()}/oauth2/device?grant_type=device_code&client_id=xbmc&client_secret=cgg3gtifu46urtfp2zp1nqtba0k2ezxh", "", proxy: proxy);
 
+                if (token_request == null)
+                    return Content($"нет доступа к {init.corsHost()}", "text/html; charset=utf-8");
+
                 string html = "1. Откройте <a href='https://kino.pub/device'>https://kino.pub/device</a> <br>";
                 html += $"2. Введите код активации <b>{token_request.Value<string>("user_code")}</b><br>";
                 html += $"3. Когда на сайте kino.pub появится \"Ожидание устройства\", нажмите кнопку \"Проверить активацию\" которая ниже</b>";
@@ -42,7 +47,7 @@ namespace Lampac.Controllers.LITE
                 if (!string.IsNullOrEmpty(name))
                     await HttpClient.Post($"{init.corsHost()}/v1/device/notify?access_token={device_token.Value<string>("access_token")}", $"&title={name}", proxy: proxy);
 
-                return Content($"В init.conf укажите token <b>{device_token.Value<string>("access_token")}</b>", "text/html; charset=utf-8");
+                return Content("Добавьте в init.conf<br><br>\"KinoPub\": {<br>&nbsp;&nbsp;\"enable\": true,<br>&nbsp;&nbsp;\"token\": \"" + device_token.Value<string>("access_token") + "\"<br>}", "text/html; charset=utf-8");
             }
         }
         #endregion
@@ -56,6 +61,7 @@ namespace Lampac.Controllers.LITE
             if (!init.enable)
                 return OnError();
 
+            var rch = new RchClient(HttpContext, host, init.rhub);
             var proxy = proxyManager.Get();
 
             string token = init.token;
@@ -67,8 +73,9 @@ namespace Lampac.Controllers.LITE
                host,
                init.corsHost(),
                token,
-               ongettourl => HttpClient.Get(init.cors(ongettourl), timeoutSeconds: 8, proxy: proxy, headers: httpHeaders(init)),
-               (stream, filepath) => HostStreamProxy(init, stream, proxy: proxy)
+               ongettourl => init.rhub ? rch.Get(init.cors(ongettourl)) : HttpClient.Get(init.cors(ongettourl), timeoutSeconds: 8, proxy: proxy, headers: httpHeaders(init)),
+               (stream, filepath) => HostStreamProxy(init, stream, proxy: proxy),
+               requesterror: () => proxyManager.Refresh()
             );
 
             if (postid == 0)
@@ -76,25 +83,32 @@ namespace Lampac.Controllers.LITE
                 if (original_language != "en")
                     clarification = 1;
 
-                var res = await InvokeCache($"kinopub:search:{title}:{clarification}:{imdb_id}", cacheTime(40), () => oninvk.Search(title, original_title, year, clarification, imdb_id, kinopoisk_id));
+                var search = await InvokeCache<SearchResult>($"kinopub:search:{title}:{clarification}:{imdb_id}", cacheTime(40), proxyManager, async res =>
+                {
+                    if (rch.IsNotConnected())
+                        return res.Fail(rch.connectionMsg);
 
-                if (res?.similars != null)
-                    return Content(res.similars, "text/html; charset=utf-8");
+                    return await oninvk.Search(title, original_title, year, clarification, imdb_id, kinopoisk_id);
+                });
 
-                postid = res == null ? 0 : res.id;
+                if (!search.IsSuccess)
+                    return OnError(search.ErrorMsg);
 
-                if (postid == 0)
-                    return OnError(proxyManager);
+                if (search.Value.similars != null)
+                    return Content(search.Value.similars, "text/html; charset=utf-8");
 
-                if (postid == -1)
-                    return OnError();
+                postid = search.Value.id;
             }
 
-            var root = await InvokeCache($"kinopub:post:{postid}", cacheTime(10), () => oninvk.Post(postid), proxyManager);
-            if (root == null)
-                return OnError(proxyManager);
+            var cache = await InvokeCache<RootObject>($"kinopub:post:{postid}", cacheTime(10), proxyManager, async res =>
+            {
+                if (rch.IsNotConnected())
+                    return res.Fail(rch.connectionMsg);
 
-            return Content(oninvk.Html(root, init.filetype, title, original_title, postid, s), "text/html; charset=utf-8");
+                return await oninvk.Post(postid);
+            });
+
+            return OnResult(cache, () => oninvk.Html(cache.Value, init.filetype, title, original_title, postid, s));
         }
     }
 }

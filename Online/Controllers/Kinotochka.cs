@@ -2,7 +2,6 @@
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Caching.Memory;
 using System.Web;
 using Lampac.Engine.CORE;
 using System.Linq;
@@ -65,7 +64,7 @@ namespace Lampac.Controllers.LITE
                         }
 
                         if (links.Count == 0)
-                            return OnError(proxyManager);
+                            return OnError();
 
                         proxyManager.Success();
                         hybridCache.Set(memKey, links, cacheTime(30));
@@ -85,10 +84,12 @@ namespace Lampac.Controllers.LITE
                     if (!hybridCache.TryGetValue(memKey, out List<(string name, string uri)> links))
                     {
                         string news = await HttpClient.Get(newsuri, timeoutSeconds: 8, proxy: proxy, cookie: cookie, headers: httpHeaders(init));
-                        string filetxt = Regex.Match(news ?? "", "file:\"(https?://[^\"]+\\.txt)\"").Groups[1].Value;
-
-                        if (string.IsNullOrWhiteSpace(filetxt))
+                        if (news == null)
                             return OnError(proxyManager);
+
+                        string filetxt = Regex.Match(news, "file:\"(https?://[^\"]+\\.txt)\"").Groups[1].Value;
+                        if (string.IsNullOrEmpty(filetxt))
+                            return OnError();
 
                         var root = await HttpClient.Get<JObject>(filetxt, timeoutSeconds: 8, proxy: proxy, cookie: cookie, headers: httpHeaders(init));
                         if (root == null)
@@ -96,7 +97,7 @@ namespace Lampac.Controllers.LITE
 
                         var playlist = root.Value<JArray>("playlist");
                         if (playlist == null)
-                            return OnError(proxyManager);
+                            return OnError();
 
                         links = new List<(string name, string uri)>();
 
@@ -114,7 +115,7 @@ namespace Lampac.Controllers.LITE
                         }
 
                         if (links.Count == 0)
-                            return OnError(proxyManager);
+                            return OnError();
 
                         proxyManager.Success();
                         hybridCache.Set(memKey, links, cacheTime(30));
@@ -139,10 +140,12 @@ namespace Lampac.Controllers.LITE
                 if (!hybridCache.TryGetValue(memKey, out string file))
                 {
                     string embed = await HttpClient.Get($"{init.corsHost()}/embed/kinopoisk/{kinopoisk_id}", timeoutSeconds: 8, proxy: proxy, cookie: cookie, headers: httpHeaders(init));
-                    file = Regex.Match(embed ?? "", "id:\"playerjshd\", file:\"(https?://[^\"]+)\"").Groups[1].Value;
-
-                    if (string.IsNullOrWhiteSpace(file))
+                    if (embed == null)
                         return OnError(proxyManager);
+
+                    file = Regex.Match(embed, "id:\"playerjshd\", file:\"(https?://[^\"]+)\"").Groups[1].Value;
+                    if (string.IsNullOrEmpty(file))
+                        return OnError();
 
                     foreach (string f in file.Split(",").Reverse())
                     {

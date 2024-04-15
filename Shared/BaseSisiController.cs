@@ -35,7 +35,7 @@ namespace SISI
                 {
                     pl.name,
                     video = HostStreamProxy(conf, pl.video, proxy: proxy, plugin: plugin, sisi: true),
-                    picture = (plugin is "bgs" or "chu") ? pl.picture : HostImgProxy(0, AppInit.conf.sisi.heightPicture, pl.picture),
+                    picture = (plugin is "bgs" or "chu" or "tizam") ? pl.picture : HostImgProxy(0, AppInit.conf.sisi.heightPicture, pl.picture),
                     pl.preview,
                     pl.time,
                     pl.json,
@@ -55,7 +55,7 @@ namespace SISI
                 {
                     pl.name,
                     video = pl.video.StartsWith("http") ? pl.video : $"{AppInit.Host(HttpContext)}/{pl.video}",
-                    picture = (plugin is "bgs" or "chu") ? pl.picture : HostImgProxy(0, AppInit.conf.sisi.heightPicture, pl.picture, headers: headers),
+                    picture = (plugin is "bgs" or "chu" or "tizam") ? pl.picture : HostImgProxy(0, AppInit.conf.sisi.heightPicture, pl.picture, headers: headers),
                     pl.preview,
                     pl.time,
                     pl.json,
@@ -70,8 +70,14 @@ namespace SISI
         {
             Dictionary<string, string> qualitys_proxy = null;
 
-            if (!proxyconf.streamproxy && proxyconf.qualitys_proxy)
-                qualitys_proxy = stream_links.qualitys.ToDictionary(k => k.Key, v => HostStreamProxy(proxyconf, v.Value, proxy: proxy, plugin: plugin, sisi: true));
+            if (!proxyconf.streamproxy && (proxyconf.geostreamproxy == null || proxyconf.geostreamproxy.Count == 0))
+            {
+                if (proxyconf.qualitys_proxy)
+                {
+                    var bsc = new BaseSettings() { streamproxy = true, useproxystream = proxyconf.useproxystream, apn = proxyconf.apn, apnstream = proxyconf.apnstream };
+                    qualitys_proxy = stream_links.qualitys.ToDictionary(k => k.Key, v => HostStreamProxy(bsc, v.Value, proxy: proxy, plugin: plugin, sisi: true));
+                }
+            }
 
             return new JsonResult(new
             {
@@ -81,7 +87,7 @@ namespace SISI
                 {
                     pl.name,
                     video = pl.video.StartsWith("http") ? pl.video : $"{AppInit.Host(HttpContext)}/{pl.video}",
-                    picture = HostImgProxy(0, 110, pl.picture, headers: headers),
+                    picture = HostImgProxy(0, AppInit.conf.sisi.heightPicture > 0 ? 110 : 0, pl.picture, headers: headers),
                     pl.json
                 })
             });

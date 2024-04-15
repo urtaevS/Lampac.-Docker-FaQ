@@ -16,8 +16,9 @@ namespace Shared.Engine.Online
         Func<string, ValueTask<string?>> onget;
         Func<string, string?, string> onstreamfile;
         Func<string, string>? onlog;
+        Action? requesterror;
 
-        public KinoPubInvoke(string? host, string apihost, string? token, Func<string, ValueTask<string?>> onget, Func<string, string?, string> onstreamfile, Func<string, string>? onlog = null)
+        public KinoPubInvoke(string? host, string apihost, string? token, Func<string, ValueTask<string?>> onget, Func<string, string?, string> onstreamfile, Func<string, string>? onlog = null, Action? requesterror = null)
         {
             this.host = host != null ? $"{host}/" : null;
             this.apihost = apihost;
@@ -25,6 +26,7 @@ namespace Shared.Engine.Online
             this.onget = onget;
             this.onstreamfile = onstreamfile;
             this.onlog = onlog;
+            this.requesterror = requesterror;
         }
         #endregion
 
@@ -41,7 +43,10 @@ namespace Shared.Engine.Online
 
             string? json = await onget($"{apihost}/v1/items/search?q={HttpUtility.UrlEncode(searchtitle)}&access_token={token}&field=title&perpage=200");
             if (json == null)
+            {
+                requesterror?.Invoke();
                 return null;
+            }
 
             try
             {
@@ -86,7 +91,7 @@ namespace Shared.Engine.Online
                                 return new SearchResult() { id = item.id };
                         }
 
-                        return new SearchResult() { id = -1 };
+                        return null;
                     }
                 }
             }
@@ -101,7 +106,10 @@ namespace Shared.Engine.Online
         {
             string? json = await onget($"{apihost}/v1/items/{postid}?access_token={token}");
             if (json == null)
+            {
+                requesterror?.Invoke();
                 return null;
+            }
 
             try
             {
@@ -193,6 +201,9 @@ namespace Shared.Engine.Online
             }
             else
             {
+                if (root?.item?.seasons == null || root.item.seasons.Count == 0)
+                    return string.Empty;
+
                 #region Сериал
                 string? enc_title = HttpUtility.UrlEncode(title);
                 string? enc_original_title = HttpUtility.UrlEncode(original_title);
@@ -200,13 +211,15 @@ namespace Shared.Engine.Online
                 if (s == -1)
                 {
                     #region Сезоны
+                    var tpl = new SeasonTpl(root.item.quality > 0 ? $"{root.item.quality}p" : null);
+
                     foreach (var season in root.item.seasons)
                     {
                         string link = host + $"lite/kinopub?postid={postid}&title={enc_title}&original_title={enc_original_title}&s={season.number}";
-
-                        html.Append("<div class=\"videos__item videos__season selector " + (firstjson ? "focused" : "") + "\" data-json='{\"method\":\"link\",\"url\":\"" + link + "\"}'><div class=\"videos__season-layers\"></div><div class=\"videos__item-imgbox videos__season-imgbox\"><div class=\"videos__item-title videos__season-title\">" + $"{season.number} сезон" + "</div></div></div>");
-                        firstjson = false;
+                        tpl.Append($"{season.number} сезон", link);
                     }
+
+                    return tpl.ToHtml();
                     #endregion
                 }
                 else

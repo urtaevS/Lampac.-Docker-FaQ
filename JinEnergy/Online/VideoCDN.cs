@@ -18,11 +18,7 @@ namespace JinEnergy.Online
 
             var oninvk = new VideoCDNInvoke
             (
-               null,
-               init.corsHost(),
-               init.cors(init.apihost!),
-               init.token!,
-               init.hls && !Shared.Model.AppInit.IsDefaultApnOrCors(init.apn ?? AppInit.apn),
+               init,
                (url, referer) => JsHttpClient.Get(init.cors(url), androidHttpReq: false, addHeaders: httpHeaders(args, init)),
                streamfile => HostStreamProxy(init, streamfile)
                //AppInit.log

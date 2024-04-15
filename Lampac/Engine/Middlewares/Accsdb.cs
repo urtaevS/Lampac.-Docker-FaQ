@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Caching.Memory;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Web;
@@ -21,6 +22,32 @@ namespace Lampac.Engine.Middlewares
 
         public Task Invoke(HttpContext httpContext)
         {
+            #region manifest / admin
+            if (!File.Exists("module/manifest.json"))
+            {
+                if (httpContext.Request.Path.Value.StartsWith("/admin/manifest/install"))
+                    return _next(httpContext);
+
+                httpContext.Response.Redirect("/admin/manifest/install");
+                return Task.CompletedTask;
+            }
+
+            if (httpContext.Request.Path.Value.StartsWith("/admin/"))
+            {
+                if (httpContext.Request.Path.Value.StartsWith("/admin/auth"))
+                    return _next(httpContext);
+
+                if (httpContext.Request.Cookies.TryGetValue("passwd", out string passwd) && passwd == File.ReadAllText("passwd"))
+                    return _next(httpContext);
+
+                httpContext.Response.Redirect("/admin/auth");
+                return Task.CompletedTask;
+            }
+            #endregion
+
+            if (!AppInit.conf.weblog && !AppInit.conf.rch.enable && httpContext.Request.Path.Value.StartsWith("/ws"))
+                return httpContext.Response.WriteAsync("disabled", httpContext.RequestAborted);
+
             if (httpContext.Connection.RemoteIpAddress.ToString() == AppInit.conf.localhost)
                 return _next(httpContext);
 
@@ -44,7 +71,7 @@ namespace Lampac.Engine.Middlewares
                     return _next(httpContext);
 
                 if (httpContext.Request.Path.Value != "/" && !Regex.IsMatch(httpContext.Request.Path.Value, jacpattern) && 
-                    !Regex.IsMatch(httpContext.Request.Path.Value, "^/((ts|ws|headers|myip|version)(/|$)|extensions|(b2pay|cryptocloud|freekassa|litecoin)/|lite/(filmixpro|fxapi/lowlevel/|kinopubpro|vokinotk)|lampa-(main|lite)/app\\.min\\.js|[a-zA-Z]+\\.js|msx/start\\.json|samsung\\.wgt)"))
+                    !Regex.IsMatch(httpContext.Request.Path.Value, "^/((ts|ws|headers|myip|version)(/|$)|extensions|(streampay|b2pay|cryptocloud|freekassa|litecoin)/|lite/(filmixpro|fxapi/lowlevel/|kinopubpro|vokinotk)|lampa-(main|lite)/app\\.min\\.js|[a-zA-Z]+\\.js|msx/start\\.json|samsung\\.wgt)"))
                 {
                     bool limitip = false;
                     HashSet<string> ips = null;

@@ -6,9 +6,13 @@ namespace Shared.Model.Base
     {
         public bool enable { get; set; }
 
+        public bool rhub { get; set; }
+
         public bool rip { get; set; }
 
         public string? displayname { get; set; }
+
+        public int displayindex { get; set; }
 
         public string? overridehost { get; set; }
 
@@ -34,7 +38,7 @@ namespace Shared.Model.Base
 
         public List<string>? geostreamproxy { get; set; }
 
-        public string? apn { get; set; }
+        public ApnConf? apn { get; set; }
 
         public bool qualitys_proxy { get; set; } = true;
         #endregion

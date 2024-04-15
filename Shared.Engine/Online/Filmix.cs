@@ -21,8 +21,9 @@ namespace Shared.Engine.Online
         Func<string, string, List<HeadersModel>?, ValueTask<string?>> onpost;
         Func<string, string> onstreamfile;
         Func<string, string>? onlog;
+        Action? requesterror;
 
-        public FilmixInvoke(string? host, string apihost, string? token, Func<string, ValueTask<string?>> onget, Func<string, string, List<HeadersModel>?, ValueTask<string?>> onpost, Func<string, string> onstreamfile, Func<string, string>? onlog = null)
+        public FilmixInvoke(string? host, string apihost, string? token, Func<string, ValueTask<string?>> onget, Func<string, string, List<HeadersModel>?, ValueTask<string?>> onpost, Func<string, string> onstreamfile, Func<string, string>? onlog = null, Action? requesterror = null)
         {
             this.host = host != null ? $"{host}/" : null;
             this.apihost = apihost;
@@ -31,6 +32,7 @@ namespace Shared.Engine.Online
             this.onpost = onpost;
             this.onstreamfile = onstreamfile;
             this.onlog = onlog;
+            this.requesterror = requesterror;
         }
         #endregion
 
@@ -94,7 +96,10 @@ namespace Shared.Engine.Online
         async ValueTask<SearchResult?> Search2(string? title, string? original_title, int clarification, int year)
         {
             if (disableSphinxSearch)
+            {
+                requesterror?.Invoke();
                 return null;
+            }
 
             onlog?.Invoke("Search2");
 
@@ -110,7 +115,10 @@ namespace Shared.Engine.Online
             ));
 
             if (html == null)
+            {
+                requesterror?.Invoke();
                 return null;
+            }
 
             var ids = new List<int>();
             var stpl = new SimilarTpl();
@@ -150,14 +158,17 @@ namespace Shared.Engine.Online
         #endregion
 
         #region Post
-        async public ValueTask<PlayerLinks?> Post(int postid)
+        async public ValueTask<RootObject?> Post(int postid)
         {
             string uri = $"{apihost}/api/v2/post/{postid}?user_dev_apk=2.0.1&user_dev_id=&user_dev_name=Xiaomi&user_dev_os=11&user_dev_token={token}&user_dev_vendor=Xiaomi";
             onlog?.Invoke(uri);
 
             string? json = await onget.Invoke(uri);
             if (json == null)
+            {
+                requesterror?.Invoke();
                 return null;
+            }
 
             try
             {
@@ -166,15 +177,16 @@ namespace Shared.Engine.Online
                 if (root?.player_links == null)
                     return null;
 
-                return root.player_links;
+                return root;
             }
             catch { return null; }
         }
         #endregion
 
         #region Html
-        public string Html(PlayerLinks? player_links, bool pro, int postid, string? title, string? original_title, int t, int? s)
+        public string Html(RootObject? root, bool pro, int postid, string? title, string? original_title, int t, int? s)
         {
+            var player_links = root?.player_links;
             if (player_links == null)
                 return string.Empty;
 
@@ -232,12 +244,8 @@ namespace Shared.Engine.Online
             else
             {
                 #region Сериал
-                onlog?.Invoke("sersial 1");
-
                 if (player_links.playlist == null || player_links.playlist.Count == 0)
                     return string.Empty;
-
-                onlog?.Invoke("sersial 2");
 
                 string? enc_title = HttpUtility.UrlEncode(title);
                 string? enc_original_title = HttpUtility.UrlEncode(original_title);
@@ -245,15 +253,15 @@ namespace Shared.Engine.Online
                 if (s == null)
                 {
                     #region Сезоны
-                    onlog?.Invoke("season");
+                    var tpl = new SeasonTpl(!string.IsNullOrEmpty(root?.quality) ? $"{root.quality}p" : null);
 
                     foreach (var season in player_links.playlist)
                     {
                         string link = host + $"lite/filmix?postid={postid}&title={enc_title}&original_title={enc_original_title}&s={season.Key}";
-
-                        html.Append("<div class=\"videos__item videos__season selector " + (firstjson ? "focused" : "") + "\" data-json='{\"method\":\"link\",\"url\":\"" + link + "\"}'><div class=\"videos__season-layers\"></div><div class=\"videos__item-imgbox videos__season-imgbox\"><div class=\"videos__item-title videos__season-title\">" + $"{season.Key.Replace("-1", "1")} сезон" + "</div></div></div>");
-                        firstjson = false;
+                        tpl.Append($"{season.Key.Replace("-1", "1")} сезон", link);
                     }
+
+                    return tpl.ToHtml();
                     #endregion
                 }
                 else

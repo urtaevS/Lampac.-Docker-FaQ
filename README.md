@@ -24,8 +24,8 @@ curl -s https://raw.githubusercontent.com/immisterio/lampac/main/install.sh | ba
 ```
 
 # Установка на Windows
-1. Установить ".NET Core 6" https://learn.microsoft.com/ru-ru/dotnet/core/install/
-2. Загрузить и распаковать релиз https://github.com/immisterio/lampac/releases
+1. Установить ".NET Core 6" https://dotnet.microsoft.com/en-us/download/dotnet/6.0
+2. Распаковать https://github.com/immisterio/Lampac/releases/latest/download/publish.zip
 3. Запустить Lampac.exe
 
 # Запуск в Android
@@ -48,9 +48,10 @@ curl -s https://raw.githubusercontent.com/immisterio/lampac/main/install.sh | ba
 # Общие настройки
 1. Отключить TorrServer/DNLA/Jackett/etc можно в module/manifest.json
 2. Настройки Jackett в module/JacRed.conf (пример JacRed.example.conf)
+3. Основные настройки в init.conf (пример example.conf)
 
 # Источники 
-* Filmix, Kinobase, Rezka, Voidboost, VideoCDN, VideoDB, Collaps, HDVB, Zetflix (VideoDB), Kodik, Ashdi (UKR), Eneyida (UKR), Kinotochka, Kinoprofi, LostfilmHD, IframeVideo, CDNmovies, Anilibria, AniMedia, AnimeGo, Animevost, Animebesst, Redheadsound, Alloha, Seasonvar, KinoPub, VoKino
+* Filmix, Kinobase, Rezka, Voidboost, VideoCDN, VDBmovies, Collaps, HDVB, Zetflix, Kodik, Ashdi (UKR), Eneyida (UKR), KinoUKR (UKR), Kinotochka, Kinoprofi, CDNmovies, Anilibria, AniMedia, AnimeGo, Animevost, Animebesst, Redheadsound, Alloha, KinoPub, VoKino
 * Kinozal, Nnmclub, Rutor, Megapeer, Torrentby, Bitru, Anilibria, Toloka (UKR), Rutracker, Selezen, LostFilm, Animelayer, Anifilm
 * PornHub, PornHubPremium, Bongacams, Chaturbate, Ebalovo, Eporner, HQporner, Porntrex, Spankbang, Xhamster, Xnxx, Xvideos
 
@@ -112,40 +113,47 @@ curl -s https://raw.githubusercontent.com/immisterio/lampac/main/install.sh | ba
 * findkp - Каталог для поиск kinopoisk_id (alloha|tabus|vsdn)
 * corseu - Использовать прокси cors.bwa.workers.dev
 
-# Настройки при совместном использовании
-* multiaccess - true
-
-В Lampac.runtimeconfig.json убрать или увеличить лимит потребления памяти 
-```
-"System.GC.HeapCount": 30,
-"System.GC.HeapHardLimit": 309715200, // ~300mb
-```
-
 # Пример init.conf
 * Список всех параметров, а так же значения по умолчанию смотреть в example.conf 
 * В init.conf нужно указывать только те параметры, которые хотите изменить
+* Редактировать init.conf можно так же через ip:9118/admin/init
 
 ```
 {
   "listenport": 9120, // изменили порт
-  "jac": {
-    "cachetype": "mem", // изменили место хранения кеша
-    "apikey": "1"       // запретили доступ без ключа авторизации
-  },
   "dlna": {
     "downloadSpeed": 25000000 // ограничили скорость загрузки до 200 Mbit/s
   },
-  "sisi": {
-    "xdb": true // вывели доп. источники с sisi.am
-  },
   "Rezka": {
     "streamproxy": true // отправили видеопоток через "http://IP:9118/proxy/{uri}" 
+  },
+  "Zetflix": {
+    "displayname": "Zetflix - 1080p", // изменили название
+    "geostreamproxy": ["UA"], // поток для UA будет идти через "http://IP:9118/proxy/{uri}" 
+    "apn": "http://apn.cfhttp.top", // заменяем прокси "http://IP:9118/proxy/{uri}" на "http://apn.cfhttp.top/{uri}"
+  },
+  "Kodik": {
+    "useproxy": true, // использовать прокси
+    "proxy": {        // использовать 91.1.1.1 и 92.2.2.2
+      "list": [
+        "socks5://91.1.1.1:5481", // socks5
+        "91.2.2.2:5481" // http
+      ]
+    }
+  },
+  "Ashdi": {
+    "useproxy": true // использовать прокси 93.3.3.3
   },
   "Filmix": {
     "token": "protoken" // добавили токен от PRO аккаунта
   },
   "PornHub": {
     "enable": false // отключили PornHub
+  },
+  "proxy": {
+    "list": [
+      "93.3.3.3:5481"
+    ]
   },
   "globalproxy": [
     {

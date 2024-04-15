@@ -5,6 +5,7 @@ using Shared.Engine.Online;
 using Shared.Engine.CORE;
 using Online;
 using Shared.Model.Online;
+using Lampac.Models.LITE;
 
 namespace Lampac.Controllers.LITE
 {
@@ -12,11 +13,31 @@ namespace Lampac.Controllers.LITE
     {
         ProxyManager proxyManager = new ProxyManager("voidboost", AppInit.conf.Voidboost);
 
+        #region getInit
+        public RezkaSettings getInit()
+        {
+            var init = AppInit.conf.Voidboost.Clone();
+
+            if (init.geostreamproxy != null && init.geostreamproxy.Count > 0)
+            {
+                string country = GeoIP2.Country(HttpContext.Connection.RemoteIpAddress.ToString());
+                if (country != null && init.geostreamproxy.Contains(country))
+                {
+                    init.streamproxy = true;
+                    init.corseu = false;
+                    init.xrealip = false;
+                }
+            }
+
+            return init;
+        }
+        #endregion
+
         #region InitVoidboostInvoke
         public VoidboostInvoke InitVoidboostInvoke()
         {
             var proxy = proxyManager.Get();
-            var init = AppInit.conf.Voidboost;
+            var init = getInit();
 
             var headers = httpHeaders(init);
 
@@ -30,10 +51,11 @@ namespace Lampac.Controllers.LITE
             (
                 host,
                 init.corsHost(),
-                init.hls && !Shared.Model.AppInit.IsDefaultApnOrCors(init.apn ?? AppInit.conf.apn),
+                MaybeInHls(init.hls, init),
                 ongettourl => HttpClient.Get(init.cors(ongettourl), timeoutSeconds: 8, proxy: proxy, headers: headers),
                 (url, data) => HttpClient.Post(init.cors(url), data, timeoutSeconds: 8, proxy: proxy, headers: headers),
-                streamfile => HostStreamProxy(init, streamfile, proxy: proxy, plugin: "voidboost")
+                streamfile => HostStreamProxy(init, streamfile, proxy: proxy, plugin: "voidboost"),
+                requesterror: () => proxyManager.Refresh()
             );
         }
         #endregion
@@ -52,7 +74,7 @@ namespace Lampac.Controllers.LITE
 
             var content = await InvokeCache($"voidboost:view:{kinopoisk_id}:{imdb_id}:{t}:{proxyManager.CurrentProxyIp}", cacheTime(20), () => oninvk.Embed(imdb_id, kinopoisk_id, t), proxyManager);
             if (content == null)
-                return OnError(proxyManager);
+                return OnError();
 
             return Content(oninvk.Html(content, imdb_id, kinopoisk_id, title, original_title, t), "text/html; charset=utf-8");
         }
@@ -70,7 +92,7 @@ namespace Lampac.Controllers.LITE
 
             string html = await InvokeCache($"voidboost:view:serial:{t}:{s}:{proxyManager.CurrentProxyIp}", cacheTime(20), () => oninvk.Serial(imdb_id, kinopoisk_id, title, original_title, t, s, true), proxyManager);
             if (html == null)
-                return OnError(proxyManager);
+                return OnError();
 
             return Content(html, "text/html; charset=utf-8");
         }
@@ -82,7 +104,7 @@ namespace Lampac.Controllers.LITE
         [Route("lite/voidboost/episode")]
         async public Task<ActionResult> Movie(string title, string original_title, string t, int s, int e, bool play)
         {
-            var init = AppInit.conf.Voidboost;
+            var init = getInit();
             if (!init.enable)
                 return OnError();
 
@@ -90,9 +112,16 @@ namespace Lampac.Controllers.LITE
 
             string realip = (init.xrealip && init.corseu) ? HttpContext.Connection.RemoteIpAddress.ToString() : "";
 
-            var md = await InvokeCache($"rezka:view:stream:{t}:{s}:{e}:{proxyManager.CurrentProxyIp}:{play}:{realip}", cacheTime(20, mikrotik: 1), () => oninvk.Movie(t, s, e), proxyManager);
+            var md = await InvokeCache($"rezka:view:stream:{t}:{s}:{e}:{proxyManager.CurrentProxyIp}:{play}:{realip}", cacheTime(20, mikrotik: 1), async () => 
+            {
+                var res = await oninvk.Movie(t, s, e);
+                await Task.Delay(2000); // ссылка не сразу доступна
+                return res;
+
+            }, proxyManager);
+
             if (md == null)
-                return OnError(proxyManager);
+                return OnError();
 
             string result = oninvk.Movie(md, title, original_title, play);
             if (result == null)

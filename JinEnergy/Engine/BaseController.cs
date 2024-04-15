@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 using Shared.Model.Base;
 using Shared.Model.Online;
-using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Web;
 
@@ -132,7 +131,7 @@ namespace JinEnergy.Engine
                 }
             }
 
-            string? apn = conf.apn ?? AppInit.apn;
+            string? apn = string.IsNullOrEmpty(conf?.apn?.host) ? AppInit.apn?.host : conf?.apn?.host;
             bool isDefaultApn = conf != null && Shared.Model.AppInit.IsDefaultApnOrCors(apn);
 
             if (IsApnIncluded(conf)/* && (!isDefaultApn || !stream_links.qualitys.First().Value.Contains(".m3u"))*/)
@@ -162,12 +161,23 @@ namespace JinEnergy.Engine
         }
 
 
+        public static bool MaybeInHls(bool hls, BaseSettings init)
+        {
+            if (!string.IsNullOrEmpty(init.apn?.host) && Shared.Model.AppInit.IsDefaultApnOrCors(init.apn?.host))
+                return false;
+
+            if (init.apnstream && Shared.Model.AppInit.IsDefaultApnOrCors(AppInit.apn?.host))
+                return false;
+
+            return hls;
+        }
+
         async public static ValueTask<bool> IsOrigStream(string? uri)
         {
-            if (string.IsNullOrWhiteSpace(uri) || AppInit.Country != "UA")
+            if (string.IsNullOrWhiteSpace(uri) || uri.Contains("ukrtelcdn.") || AppInit.Country != "UA")
                 return true;
 
-            return await JsHttpClient.StatusCode(uri) == 200;
+            return await JsHttpClient.StatusCode(uri) is 200 or 301 or 302 or 0;
         }
 
         public static string DefaultStreamProxy(string? uri, bool orig = false)
@@ -175,15 +185,15 @@ namespace JinEnergy.Engine
             if (string.IsNullOrWhiteSpace(uri))
                 return string.Empty;
 
-            if (string.IsNullOrEmpty(AppInit.apn) || AppInit.Country != "UA" || orig || uri.Contains("ukrtelcdn."))
+            if (string.IsNullOrEmpty(AppInit.apn?.host) || AppInit.Country != "UA" || orig || uri.Contains("ukrtelcdn."))
                 return uri;
 
-            return $"{AppInit.apn}/{uri}";
+            return $"{AppInit.apn.host}/{uri}";
         }
 
         public static string HostStreamProxy(Istreamproxy conf, string? uri)
         {
-            string? apn = conf?.apn ?? AppInit.apn;
+            string? apn = string.IsNullOrEmpty(conf?.apn?.host) ? AppInit.apn?.host : conf?.apn?.host;
             if (conf == null || string.IsNullOrEmpty(uri) || string.IsNullOrEmpty(apn) || !apn.StartsWith("http"))
                 return uri;
 
@@ -201,7 +211,7 @@ namespace JinEnergy.Engine
 
         public static bool IsApnIncluded(Istreamproxy? conf)
         {
-            string? apn = conf?.apn ?? AppInit.apn;
+            string? apn = string.IsNullOrEmpty(conf?.apn?.host) ? AppInit.apn?.host : conf?.apn?.host;
             if (conf == null || string.IsNullOrEmpty(apn))
                 return false;
 
@@ -218,7 +228,7 @@ namespace JinEnergy.Engine
         {
             if (NotUseDefaultApn)
             {
-                if (Shared.Model.AppInit.IsDefaultApnOrCors(conf.apn ?? AppInit.apn) || Shared.Model.AppInit.IsDefaultApnOrCors(Shared.Model.AppInit.corseuhost))
+                if (Shared.Model.AppInit.IsDefaultApnOrCors(conf.apn?.host ?? AppInit.apn?.host) || Shared.Model.AppInit.IsDefaultApnOrCors(Shared.Model.AppInit.corseuhost))
                     return false;
             }
 

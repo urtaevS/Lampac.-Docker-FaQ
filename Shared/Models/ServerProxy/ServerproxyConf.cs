@@ -1,6 +1,6 @@
 ﻿using Shared.Model.Base;
 
-namespace Lampac.Models.AppConf
+namespace Shared.Models.ServerProxy
 {
     public class ServerproxyConf : Iproxy
     {
@@ -12,13 +12,11 @@ namespace Lampac.Models.AppConf
 
         public bool allow_tmdb { get; set; }
 
-        public bool cache_img { get; set; }
-
-        public bool cache_hls { get; set; }
-
-        public string cache_hls_pattern { get; set; }
-
         public bool showOrigUri { get; set; }
+
+        public ServerproxyCacheConf cache { get; set; } = new ServerproxyCacheConf();
+
+        public ServerproxyBufferingConf buffering { get; set; } = new ServerproxyBufferingConf();
 
 
         public bool useproxy { get; set; }
@@ -27,6 +25,6 @@ namespace Lampac.Models.AppConf
 
         public string globalnameproxy { get; set; }
 
-        public ProxySettings? proxy { get; set; }
+        public ProxySettings proxy { get; set; }
     }
 }

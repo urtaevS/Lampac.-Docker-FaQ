@@ -1,7 +1,6 @@
 ﻿using JinEnergy.Engine;
 using Microsoft.JSInterop;
 using Shared.Model.Base;
-using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -113,13 +112,13 @@ namespace JinEnergy.Online
         [JSInvokable("lite/events")]
         public static string Events(string args)
         {
-            var online = new StringBuilder();
+            var online = new List<(string name, string url, int index)>(20);
 
             var arg = defaultArgs(args);
             int serial = int.Parse(parse_arg("serial", args) ?? "-1");
             bool isanime = arg.original_language == "ja";
             bool titleSearch = string.IsNullOrEmpty(arg.imdb_id) && arg.kinopoisk_id == 0;
-            string argTitle_vpn = AppInit.Country == "UA" ? " / vpn" : "";
+            string argTitle_vpn = string.Empty; // AppInit.Country == "UA" ? " / vpn" : "";
 
             void send(string name, string plugin, BaseSettings init, string? arg_title = null, string? arg_url = null, string? overridehost = null)
             {
@@ -129,7 +128,7 @@ namespace JinEnergy.Online
                     if (string.IsNullOrEmpty(url))
                         url = "lite/" + plugin + arg_url;
 
-                    online!.Append("{\"name\":\"" + $"{init.displayname ?? name}{arg_title}" + "\",\"url\":\"" + url + "\"},");
+                    online.Add(($"{init.displayname ?? name}{arg_title}", url, init.displayindex));
                 }
             }
 
@@ -148,13 +147,16 @@ namespace JinEnergy.Online
 
             send("KinoPub - 4K HDR", "kinopub", AppInit.KinoPub, arg_url: (arg.source == "pub" ? $"?postid={arg.id}" : ""));
 
-            if (arg.kinopoisk_id > 0)
-                send("VideoDB - 1080p", "videodb", AppInit.VideoDB);
+            if (!isanime && arg.kinopoisk_id > 0)
+                send("VoKino - 4K HDR", "vokino", AppInit.VoKino);
 
             send("Rezka - 4K", "rezka", AppInit.Rezka);
 
-            if (serial == 0 && !isanime && arg.kinopoisk_id > 0)
-                send("VoKino - 4K HDR", "vokino", AppInit.VoKino);
+            if (arg.kinopoisk_id > 0)
+            {
+                send("VideoDB - 1080p", "videodb", AppInit.VideoDB);
+                send("Zetflix - 1080p", "zetflix", AppInit.Zetflix);
+            }
 
             send("VideoCDN - 1080p", "vcdn", AppInit.VCDN, argTitle_vpn);
             send("Kinobase - 1080p", "kinobase", AppInit.Kinobase);
@@ -165,6 +167,9 @@ namespace JinEnergy.Online
                     send("Ashdi (UKR) - 4K", "ashdi", AppInit.Ashdi);
 
                 send("Eneyida (UKR) - 1080p", "eneyida", AppInit.Eneyida);
+
+                if (!isanime)
+                    send("Kinoukr (UKR) - 1080p", "kinoukr", AppInit.Kinoukr);
             }
 
             if (!titleSearch)
@@ -185,19 +190,16 @@ namespace JinEnergy.Online
             if (!titleSearch)
                 send("Voidboost - 720p", "voidboost", AppInit.Voidboost, argTitle_vpn);
 
-            send("HDVB - 1080p", "hdvb", AppInit.HDVB);
-
             if (arg.kinopoisk_id > 0)
-                send("Zetflix - 1080p", "zetflix", AppInit.Zetflix);
-
-            if (!titleSearch)
                 send("VDBmovies - 720p", "vdbmovies", AppInit.VDBmovies, argTitle_vpn);
+
+            send("HDVB - 1080p", "hdvb", AppInit.HDVB);
 
             if (arg.kinopoisk_id > 0 && serial == 1 && !isanime)
                 send("CDNmovies - 360p", "cdnmovies", AppInit.CDNmovies);
 
 
-            return $"[{Regex.Replace(online.ToString(), ",$", "")}]";
+            return $"[{string.Join(",", online.OrderByDescending(i => i.index).Select(i => "{\"name\":\"" + i.name + "\",\"url\":\"" + i.url + "\"}"))}]";
         }
         #endregion
     }

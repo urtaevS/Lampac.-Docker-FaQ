@@ -15,6 +15,12 @@ namespace Lampac.Engine.CRON
 
             while (true)
             {
+                if (!AppInit.conf.pirate_store)
+                {
+                    await Task.Delay(TimeSpan.FromMinutes(1));
+                    continue;
+                }
+
                 try
                 {
                     async void update(string url, string checkcode = "Lampa.", string path = null)
@@ -30,7 +36,7 @@ namespace Lampac.Engine.CRON
                                 if (js.Contains("METRIKA"))
                                     js = js.Replace("$('body').append(METRIKA);", "");
 
-                                await File.WriteAllTextAsync($"wwwroot/plugins/{path}", js, Encoding.UTF8);
+                                File.WriteAllText($"wwwroot/plugins/{path}", js, Encoding.UTF8);
                             }
                         }
                         catch { }
@@ -57,7 +63,7 @@ namespace Lampac.Engine.CRON
                         string bootapp = await HttpClient.Get("https://bwa.pages.dev/blazor.boot.json");
                         if (bootapp != null && bootapp.Contains("JinEnergy.dll"))
                         {
-                            string currentapp = await File.ReadAllTextAsync("wwwroot/bwa/_framework/blazor.boot.json");
+                            string currentapp = File.ReadAllText("wwwroot/bwa/_framework/blazor.boot.json");
                             currentapp = CrypTo.md5(currentapp);
 
                             if (CrypTo.md5(bootapp) != currentapp)

@@ -1,9 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Lampac.Engine.CORE;
+using Lampac.Models.LITE.KinoPub;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
@@ -21,7 +24,7 @@ namespace Lampac.Engine
     {
         IServiceScope serviceScope;
 
-        public static string appversion => "106";
+        public static string appversion => "113";
 
         public HybridCache hybridCache { get; private set; }
 
@@ -108,8 +111,8 @@ namespace Lampac.Engine
         #region proxy
         public string HostImgProxy(int width, int height, string uri, List<HeadersModel> headers = null)
         {
-            if (string.IsNullOrWhiteSpace(uri)) 
-                return null;
+            if (string.IsNullOrWhiteSpace(uri) || (width == 0 && height == 0)) 
+                return uri;
 
             uri = ProxyLink.Encrypt(uri, HttpContext.Connection.RemoteIpAddress.ToString(), headers);
 
@@ -125,10 +128,7 @@ namespace Lampac.Engine
 
         public string HostStreamProxy(Istreamproxy conf, string uri, List<HeadersModel> headers = null, WebProxy proxy = null, string plugin = null, bool sisi = false)
         {
-            if (string.IsNullOrWhiteSpace(uri))
-                return null;
-
-            if (conf == null)
+            if (string.IsNullOrEmpty(uri) || conf == null || conf.rhub)
                 return uri;
 
             bool streamproxy = conf.streamproxy || conf.useproxystream;
@@ -141,16 +141,37 @@ namespace Lampac.Engine
 
             if (streamproxy)
             {
-                bool deny_apn = sisi && Shared.Model.AppInit.IsDefaultApnOrCors(conf.apn ?? AppInit.conf.apn) && uri.Contains(".m3u");
-
-                //if (!deny_apn)
+                #region apnstream
+                string apnlink(ApnConf apn)
                 {
-                    if (!string.IsNullOrEmpty(conf.apn) && conf.apn.StartsWith("http"))
-                        return $"{conf.apn}/{uri}";
+                    if (apn.secure == "nginx")
+                    {
+                        using (MD5 md5 = MD5.Create())
+                        {
+                            long ex = ((DateTimeOffset)DateTime.Now.AddHours(12)).ToUnixTimeSeconds();
+                            string hash = Convert.ToBase64String(md5.ComputeHash(Encoding.UTF8.GetBytes($"{ex}{HttpContext.Connection.RemoteIpAddress} {apn.secret}"))).Replace("=", "").Replace("+", "-").Replace("/", "_");
 
-                    if (conf.apnstream && !string.IsNullOrEmpty(AppInit.conf.apn) && AppInit.conf.apn.StartsWith("http"))
-                        return $"{AppInit.conf.apn}/{uri}";
+                            return $"{apn.host}/{hash}:{ex}/{uri}";
+                        }
+                    }
+                    else if (apn.secure == "cf")
+                    {
+                        using (var sha1 = SHA1.Create())
+                        {
+                            var data = Encoding.UTF8.GetBytes($"{HttpContext.Connection.RemoteIpAddress}{uri}{apn.secret}");
+                            return Convert.ToBase64String(sha1.ComputeHash(data));
+                        }
+                    }
+
+                    return $"{apn.host}/{uri}";
                 }
+
+                if (!string.IsNullOrEmpty(conf.apn?.host) && conf.apn.host.StartsWith("http"))
+                    return apnlink(conf.apn);
+
+                if (conf.apnstream && !string.IsNullOrEmpty(AppInit.conf?.apn?.host) && AppInit.conf.apn.host.StartsWith("http"))
+                    return apnlink(AppInit.conf.apn);
+                #endregion
 
                 uri = ProxyLink.Encrypt(uri, HttpContext.Connection.RemoteIpAddress.ToString(), headers, conf != null && conf.useproxystream ? proxy : null, plugin);
 
@@ -169,18 +190,30 @@ namespace Lampac.Engine
         #endregion
 
         #region cache
-        async public ValueTask<CacheResult<T>> InvokeCache<T>(string key, TimeSpan time, ProxyManager proxyManager, Func<CacheResult<T>, ValueTask<CacheResult<T>>> onget) 
+        public ValueTask<CacheResult<T>> InvokeCache<T>(string key, TimeSpan time, Func<CacheResult<T>, ValueTask<dynamic>> onget) => InvokeCache(key, time, null, onget);
+
+        async public ValueTask<CacheResult<T>> InvokeCache<T>(string key, TimeSpan time, ProxyManager proxyManager, Func<CacheResult<T>, ValueTask<dynamic>> onget, bool inmemory = false)
         {
             if (hybridCache.TryGetValue(key, out T _val))
                 return new CacheResult<T>() { IsSuccess = true, Value = _val };
 
-            var cache = await onget.Invoke(new CacheResult<T>());
-            if (cache == null || !cache.IsSuccess)
-                return cache;
+            var val = await onget.Invoke(new CacheResult<T>());
+
+            if (val == null)
+                return new CacheResult<T>() { IsSuccess = false, ErrorMsg = "null" };
+
+            if (val.GetType() == typeof(CacheResult<T>))
+                return (CacheResult<T>)val;
+
+            if (val.Equals(default(T)))
+                return new CacheResult<T>() { IsSuccess = false, ErrorMsg = "default" };
+
+            if (typeof(T) == typeof(string) && string.IsNullOrEmpty(val.ToString()))
+                return new CacheResult<T>() { IsSuccess = false, ErrorMsg = "empty" };
 
             proxyManager?.Success();
-            hybridCache.Set(key, cache.Value, time);
-            return cache;
+            hybridCache.Set(key, val, time, inmemory);
+            return new CacheResult<T>() { IsSuccess = true, Value = val };
         }
 
         async public ValueTask<T> InvokeCache<T>(string key, TimeSpan time, Func<ValueTask<T>> onget, ProxyManager proxyManager = null, bool inmemory = false)

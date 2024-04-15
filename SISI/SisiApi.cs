@@ -1,14 +1,18 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Lampac;
 using Lampac.Engine;
 using Lampac.Engine.CORE;
+using Lampac.Models.Module;
+using Lampac.Models.SISI;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Newtonsoft.Json.Linq;
+using Shared.Engine;
 using IO = System.IO;
 
 namespace SISI
@@ -20,14 +24,7 @@ namespace SISI
         [Route("sisi.js")]
         public ActionResult Sisi(bool lite)
         {
-            if (!memoryCache.TryGetValue($"ApiController:sisi.js:{lite}", out string file))
-            {
-                file = IO.File.ReadAllText("plugins/" + (lite ? "sisi.lite.js" : "sisi.js"));
-                memoryCache.Set($"ApiController:sisi.js:{lite}", file, DateTime.Now.AddMinutes(5));
-            }
-
-            file = file.Replace("{localhost}", $"{host}/sisi");
-            return Content(file, contentType: "application/javascript; charset=utf-8");
+            return Content(FileCache.ReadAllText("plugins/" + (lite ? "sisi.lite.js" : "sisi.js")).Replace("{localhost}", $"{host}/sisi"), contentType: "application/javascript; charset=utf-8");
         }
         #endregion
 
@@ -36,11 +33,7 @@ namespace SISI
         [Route("sisi/plugins/modification.js")]
         public ActionResult SisiModification()
         {
-            if (!memoryCache.TryGetValue("ApiController:sisimodification.js", out string file))
-            {
-                file = IO.File.ReadAllText("wwwroot/sisi/plugins/modification.js");
-                memoryCache.Set("ApiController:sisimodification.js", file, DateTime.Now.AddMinutes(5));
-            }
+            string file = FileCache.ReadAllText("wwwroot/sisi/plugins/modification.js");
 
             if (!AppInit.conf.sisi.xdb)
                 file = file.Replace("addId();", "");
@@ -55,155 +48,72 @@ namespace SISI
         async public Task<ActionResult> Index()
         {
             var conf = AppInit.conf;
-            var channels = new List<dynamic>() 
+            var channels = new List<ChannelItem>() 
             {
-                new
-                {
-                    title = "Закладки",
-                    playlist_url = $"{host}/sisi/bookmarks"
-                }
+                new ChannelItem("Закладки", $"{host}/sisi/bookmarks")
             };
 
             if (AppInit.modules != null)
             {
-                foreach (var item in AppInit.modules)
+                foreach (RootModule mod in AppInit.modules.Where(i => i.sisi != null))
                 {
-                    foreach (var mod in item.sisi)
+                    try
                     {
-                        if (mod.enable)
+                        if (mod.assembly.GetType(mod.sisi) is Type t && t.GetMethod("Events") is MethodInfo m)
                         {
-                            channels.Add(new
-                            {
-                                title = mod.name,
-                                playlist_url = mod.url.Replace("{localhost}", host)
-                            });
+                            var result = (List<ChannelItem>)m.Invoke(null, new object[] { host });
+                            if (result != null && result.Count > 0)
+                                channels.AddRange(result);
                         }
                     }
+                    catch { }
                 }
             }
 
             if (conf.PornHubPremium.enable)
-            {
-                channels.Add(new
-                {
-                    title = "pornhubpremium.com",
-                    playlist_url = $"{host}/phubprem"
-                });
-            }
+                channels.Add(new ChannelItem("pornhubpremium.com", conf.PornHubPremium.overridehost ?? $"{host}/phubprem"));
 
             if (conf.PornHub.enable)
-            {
-                channels.Add(new
-                {
-                    title = "pornhub.com",
-                    playlist_url = $"{host}/phub"
-                });
-            }
+                channels.Add(new ChannelItem("pornhub.com", conf.PornHub.overridehost ?? $"{host}/phub"));
 
             if (conf.HQporner.enable)
-            {
-                channels.Add(new
-                {
-                    title = "hqporner.com",
-                    playlist_url = $"{host}/hqr"
-                });
-            }
+                channels.Add(new ChannelItem("hqporner.com", conf.HQporner.overridehost ?? $"{host}/hqr"));
 
             if (conf.Spankbang.enable)
-            {
-                channels.Add(new
-                {
-                    title = "spankbang.com",
-                    playlist_url = $"{host}/sbg"
-                });
-            }
+                channels.Add(new ChannelItem("spankbang.com", conf.Spankbang.overridehost ?? $"{host}/sbg"));
 
             if (conf.Eporner.enable)
-            {
-                channels.Add(new
-                {
-                    title = "eporner.com",
-                    playlist_url = $"{host}/epr"
-                });
-            }
+                channels.Add(new ChannelItem("eporner.com", conf.Eporner.overridehost ?? $"{host}/epr"));
 
             if (conf.Porntrex.enable)
-            {
-                channels.Add(new
-                {
-                    title = "porntrex.com",
-                    playlist_url = $"{host}/ptx"
-                });
-            }
+                channels.Add(new ChannelItem("porntrex.com", conf.Porntrex.overridehost ?? $"{host}/ptx"));
 
             if (conf.Ebalovo.enable)
-            {
-                channels.Add(new
-                {
-                    title = "ebalovo.porn",
-                    playlist_url = $"{host}/elo"
-                });
-            }
+                channels.Add(new ChannelItem("ebalovo.porn", conf.Ebalovo.overridehost ?? $"{host}/elo"));
 
             if (conf.Xhamster.enable)
-            {
-                channels.Add(new
-                {
-                    title = "xhamster.com",
-                    playlist_url = $"{host}/xmr"
-                });
-            }
+                channels.Add(new ChannelItem("xhamster.com", conf.Xhamster.overridehost ?? $"{host}/xmr"));
 
             if (conf.Xvideos.enable)
-            {
-                channels.Add(new
-                {
-                    title = "xvideos.com",
-                    playlist_url = $"{host}/xds"
-                });
-            }
+                channels.Add(new ChannelItem("xvideos.com", conf.Xvideos.overridehost ?? $"{host}/xds"));
 
             if (conf.Xnxx.enable)
-            {
-                channels.Add(new
-                {
-                    title = "xnxx.com",
-                    playlist_url = $"{host}/xnx"
-                });
-            }
+                channels.Add(new ChannelItem("xnxx.com", conf.Xnxx.overridehost ?? $"{host}/xnx"));
 
             if (conf.Tizam.enable)
-            {
-                channels.Add(new
-                {
-                    title = "tizam.pw",
-                    playlist_url = $"{host}/tizam"
-                });
-            }
+                channels.Add(new ChannelItem("tizam.pw", conf.Tizam.overridehost ?? $"{host}/tizam"));
 
             if (conf.BongaCams.enable)
-            {
-                channels.Add(new
-                {
-                    title = "bongacams.com",
-                    playlist_url = $"{host}/bgs"
-                });
-            }
+                channels.Add(new ChannelItem("bongacams.com", conf.BongaCams.overridehost ?? $"{host}/bgs"));
 
             if (conf.Chaturbate.enable)
-            {
-                channels.Add(new
-                {
-                    title = "chaturbate.com",
-                    playlist_url = $"{host}/chu"
-                });
-            }
+                channels.Add(new ChannelItem("chaturbate.com", conf.Chaturbate.overridehost ?? $"{host}/chu"));
 
             if (conf.sisi.xdb)
             {
                 try
                 {
-                    var ch = await HttpClient.Get<JObject>("http://vi.sisi.am", timeoutSeconds: 4);
+                    var ch = await HttpClient.Get<JObject>("https://vi.sisi.am", timeoutSeconds: 4);
 
                     foreach (var pl in ch.GetValue("channels"))
                     {
@@ -216,11 +126,7 @@ namespace SISI
                         if (channels.FirstOrDefault(i => i.title == title) != null)
                             continue;
 
-                        channels.Add(new
-                        {
-                            title,
-                            playlist_url
-                        });
+                        channels.Add(new ChannelItem(title, playlist_url));
                     }
                 }
                 catch { }

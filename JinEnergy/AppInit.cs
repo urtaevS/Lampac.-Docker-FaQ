@@ -3,6 +3,8 @@ using Lampac.Models.AppConf;
 using Lampac.Models.LITE;
 using Lampac.Models.SISI;
 using Microsoft.JSInterop;
+using Shared.Model.Base;
+using Shared.Model.Online.Settings;
 using System.Text.Json;
 
 namespace JinEnergy
@@ -93,7 +95,7 @@ namespace JinEnergy
 
         public static SisiConf sisi => conf.sisi;
 
-        public static string? apn => conf.apn;
+        public static ApnConf? apn => conf.apn;
 
         public static SisiSettings BongaCams => conf.BongaCams;
 
@@ -130,6 +132,8 @@ namespace JinEnergy
 
         public static OnlinesSettings Eneyida => conf.Eneyida;
 
+        public static OnlinesSettings Kinoukr => conf.Kinoukr;
+
         public static OnlinesSettings Kinotochka => conf.Kinotochka;
 
         public static OnlinesSettings Redheadsound => conf.Redheadsound;
@@ -140,7 +144,7 @@ namespace JinEnergy
 
         public static FilmixSettings FilmixPartner => conf.FilmixPartner;
 
-        public static OnlinesSettings Zetflix => conf.Zetflix;
+        public static ZetflixSettings Zetflix => conf.Zetflix;
 
         public static OnlinesSettings VideoDB => conf.VideoDB;
 

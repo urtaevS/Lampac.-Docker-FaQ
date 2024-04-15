@@ -3,7 +3,6 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
 using Lampac.Engine.CORE;
 using System.Web;
-using Microsoft.Extensions.Caching.Memory;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
@@ -56,7 +55,7 @@ namespace Lampac.Controllers.LITE
                     }
 
                     if (catalog.Count == 0)
-                        return OnError(proxyManager);
+                        return OnError();
 
                     proxyManager.Success();
                     hybridCache.Set(memkey, catalog, cacheTime(40));
@@ -68,11 +67,7 @@ namespace Lampac.Controllers.LITE
                 var stpl = new SimilarTpl(catalog.Count);
 
                 foreach (var res in catalog)
-                {
-                    string link = $"{host}/lite/animego?title={HttpUtility.UrlEncode(title)}&pid={res.pid}&s={res.s}";
-
-                    stpl.Append(res.title, res.year, string.Empty, link);
-                }
+                    stpl.Append(res.title, res.year, string.Empty, $"{host}/lite/animego?title={HttpUtility.UrlEncode(title)}&pid={res.pid}&s={res.s}");
 
                 return Content(stpl.ToHtml(), "text/html; charset=utf-8");
                 #endregion
@@ -105,7 +100,7 @@ namespace Lampac.Controllers.LITE
 
                     var g = Regex.Match(content, "data-player=\"(https?:)?//(aniboom\\.[^/]+)/embed/([^\"\\?&]+)\\?episode=1\\&amp;translation=([0-9]+)\"").Groups;
                     if (string.IsNullOrWhiteSpace(g[2].Value) || string.IsNullOrWhiteSpace(g[3].Value) || string.IsNullOrWhiteSpace(g[4].Value))
-                        return OnError(proxyManager);
+                        return OnError();
 
                     #region links
                     cache.links = new List<(string episode, string uri)>();
@@ -119,7 +114,7 @@ namespace Lampac.Controllers.LITE
                     }
 
                     if (cache.links.Count == 0)
-                        return OnError(proxyManager);
+                        return OnError();
                     #endregion
 
                     #region translation / translations

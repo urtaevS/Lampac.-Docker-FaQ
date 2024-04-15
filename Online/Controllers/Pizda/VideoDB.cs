@@ -25,7 +25,7 @@ namespace Lampac.Controllers.LITE
             (
                host,
                init.corsHost(),
-               init.hls && !Shared.Model.AppInit.IsDefaultApnOrCors(init.apn ?? AppInit.conf.apn),
+               MaybeInHls(init.hls, init),
                (url, head) => HttpClient.Get(init.cors(url), timeoutSeconds: 8, referer: "https://www.google.com/", headers: httpHeaders(init)),
                streamfile => HostStreamProxy(init, streamfile, plugin: "videodb")
             );
@@ -51,7 +51,7 @@ namespace Lampac.Controllers.LITE
 
             using (var browser = await PuppeteerTo.Browser())
             {
-                var page = cookies != null ? await browser.Page("videodb", cookies) : await browser.Page("videodb", new Dictionary<string, string>()
+                var page = cookies != null ? await browser.Page(cookies) : await browser.Page(new Dictionary<string, string>()
                 {
                     ["cookie"] = "invite=a246a3f46c82fe439a45c3dbbbb24ad5;"
                 });

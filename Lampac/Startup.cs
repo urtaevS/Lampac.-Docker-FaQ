@@ -17,6 +17,12 @@ using PuppeteerSharp;
 using Shared.Engine;
 using Shared.Engine.CORE;
 using Newtonsoft.Json;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Http;
+using System.Threading.Tasks;
+using System.Threading;
+using System.IO;
+using Microsoft.AspNetCore.SignalR;
 
 namespace Lampac
 {
@@ -36,6 +42,34 @@ namespace Lampac
         #region ConfigureServices
         public void ConfigureServices(IServiceCollection services)
         {
+            #region IHttpClientFactory
+            services.AddHttpClient("proxy").ConfigurePrimaryHttpMessageHandler(() =>
+            {
+                var handler = new System.Net.Http.HttpClientHandler()
+                {
+                    AutomaticDecompression = DecompressionMethods.Brotli | DecompressionMethods.GZip | DecompressionMethods.Deflate,
+                    AllowAutoRedirect = false
+                };
+
+                handler.ServerCertificateCustomValidationCallback += (sender, cert, chain, sslPolicyErrors) => true;
+                return handler;
+            });
+
+            services.AddHttpClient("base").ConfigurePrimaryHttpMessageHandler(() =>
+            {
+                var handler = new System.Net.Http.HttpClientHandler()
+                {
+                    AutomaticDecompression = DecompressionMethods.Brotli | DecompressionMethods.GZip | DecompressionMethods.Deflate,
+                    AllowAutoRedirect = true
+                };
+
+                handler.ServerCertificateCustomValidationCallback += (sender, cert, chain, sslPolicyErrors) => true;
+                return handler;
+            });
+
+            services.RemoveAll<IHttpMessageHandlerBuilderFilter>();
+            #endregion
+
             services.Configure<CookiePolicyOptions>(options =>
             {
                 options.CheckConsentNeeded = context => true;
@@ -76,35 +110,59 @@ namespace Lampac
         #endregion
 
 
-        public void Configure(IApplicationBuilder app, IWebHostEnvironment env, IMemoryCache memory)
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env, IMemoryCache memory, System.Net.Http.IHttpClientFactory httpClientFactory)
         {
             memoryCache = memory;
             Shared.Startup.Configure(app, memory);
             HybridCache.Configure(memory);
-            HttpClient.onlog += (e, log) => { _ = soks.Send(log, "http"); };
+            ProxyManager.Configure(memory);
+            HttpClient.httpClientFactory = httpClientFactory;
+            bool manifestload = File.Exists("module/manifest.json");
+
+            if (manifestload)
+            {
+                HttpClient.onlog += (e, log) => soks.SendLog(log, "http");
+                RchClient.hub += (e, req) => soks.hubClients?.Client(req.connectionId)?.SendAsync("RchClient", req.rchId, req.url, req.data);
+            }
+
+            if (!File.Exists("passwd"))
+                File.WriteAllText("passwd", Guid.NewGuid().ToString());
 
             try
             {
-                if (AppInit.conf.isarm || !string.IsNullOrEmpty(AppInit.conf.puppeteer_ExecutablePath))
+                if (manifestload && AppInit.conf.puppeteer.enable)
                 {
-                    Console.WriteLine("Don't forget to install chromium-browser");
-                    Console.WriteLine("apt install -y chromium-browser\n");
-                }
-                else
-                {
-                    new BrowserFetcher().DownloadAsync()?.Wait();
-                }
+                    ThreadPool.QueueUserWorkItem(async _ =>
+                    {
+                        try
+                        {
+                            if (string.IsNullOrWhiteSpace(AppInit.conf.puppeteer.executablePath))
+                                await new BrowserFetcher().DownloadAsync();
 
-                if (PuppeteerTo.IsKeepOpen)
-                    PuppeteerTo.LaunchKeepOpen();
+                            if (PuppeteerTo.IsKeepOpen)
+                                PuppeteerTo.LaunchKeepOpen();
+                        }
+                        catch (Exception ex) { Console.WriteLine(ex); }
+                    });
+                }
             }
             catch { }
 
-            Console.WriteLine(JsonConvert.SerializeObject(AppInit.conf, Formatting.Indented, new JsonSerializerSettings()
+            if (manifestload)
             {
-                DefaultValueHandling = DefaultValueHandling.Ignore,
-                NullValueHandling = NullValueHandling.Ignore
-            }));
+                Console.WriteLine(JsonConvert.SerializeObject(AppInit.conf, Formatting.Indented, new JsonSerializerSettings()
+                {
+                    //DefaultValueHandling = DefaultValueHandling.Ignore,
+                    NullValueHandling = NullValueHandling.Ignore
+                }));
+
+                ThreadPool.GetMinThreads(out int workerThreads, out int completionPortThreads);
+
+                if (AppInit.conf.multiaccess)
+                    ThreadPool.SetMinThreads(Math.Max(400, workerThreads), Math.Max(200, completionPortThreads));
+                else
+                    ThreadPool.SetMinThreads(Math.Max(50, workerThreads), Math.Max(20, completionPortThreads));
+            }
 
             app.UseDeveloperExceptionPage();
 

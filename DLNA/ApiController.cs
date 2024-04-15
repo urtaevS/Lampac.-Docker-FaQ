@@ -16,6 +16,7 @@ using System.Text.RegularExpressions;
 using Newtonsoft.Json;
 using Lampac.Engine.CORE;
 using System.Threading;
+using Shared.Engine;
 
 namespace Lampac.Controllers
 {
@@ -54,57 +55,61 @@ namespace Lampac.Controllers
 
                 manager.TorrentStateChanged += async (s, e) =>
                 {
-                    if (e != null && e.NewState == TorrentState.Seeding)
-                        await e.TorrentManager.StopAsync();
-
-                    if (e != null && (e.NewState == TorrentState.Metadata || e.NewState == TorrentState.Hashing || e.NewState == TorrentState.Downloading))
+                    try
                     {
-                        if (!setPriority)
-                        {
-                            setPriority = true;
+                        if (e != null && e.NewState == TorrentState.Seeding)
+                            await e.TorrentManager.StopAsync();
 
-                            if (indexs == null || indexs.Length == 0)
+                        if (e != null && (e.NewState == TorrentState.Metadata || e.NewState == TorrentState.Hashing || e.NewState == TorrentState.Downloading))
+                        {
+                            if (!setPriority)
                             {
-                                await manager.SetFilePriorityAsync(manager.Files[0], Priority.High);
-                            }
-                            else
-                            {
-                                for (int i = 0; i < manager.Files.Count; i++)
+                                setPriority = true;
+
+                                if (indexs == null || indexs.Length == 0)
                                 {
-                                    if (indexs.Contains(i))
+                                    await manager.SetFilePriorityAsync(manager.Files[0], Priority.High);
+                                }
+                                else
+                                {
+                                    for (int i = 0; i < manager.Files.Count; i++)
                                     {
-                                        await manager.SetFilePriorityAsync(manager.Files[i], i == indexs[0] ? Priority.High : Priority.Normal);
-                                    }
-                                    else
-                                    {
-                                        await manager.SetFilePriorityAsync(manager.Files[i], Priority.DoNotDownload);
+                                        if (indexs.Contains(i))
+                                        {
+                                            await manager.SetFilePriorityAsync(manager.Files[i], i == indexs[0] ? Priority.High : Priority.Normal);
+                                        }
+                                        else
+                                        {
+                                            await manager.SetFilePriorityAsync(manager.Files[i], Priority.DoNotDownload);
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
 
-                    if (e != null && (e.NewState == TorrentState.Stopped || e.NewState == TorrentState.Stopping))
-                    {
-                        try
-                        {
-                            IO.File.Delete(path);
-                            IO.File.Delete(path.Replace(".torrent", ".json"));
-                        }
-                        catch { }
-
-                        foreach (var f in e.TorrentManager.Files)
+                        if (e != null && (e.NewState == TorrentState.Stopped || e.NewState == TorrentState.Stopping))
                         {
                             try
                             {
-                                if (f.Priority == Priority.DoNotDownload && IO.File.Exists(f.FullPath))
-                                    IO.File.Delete(f.FullPath);
+                                IO.File.Delete(path);
+                                IO.File.Delete(path.Replace(".torrent", ".json"));
                             }
                             catch { }
-                        }
 
-                        await removeClientEngine();
+                            foreach (var f in e.TorrentManager.Files)
+                            {
+                                try
+                                {
+                                    if (f.Priority == Priority.DoNotDownload && IO.File.Exists(f.FullPath))
+                                        IO.File.Delete(f.FullPath);
+                                }
+                                catch { }
+                            }
+
+                            await removeClientEngine();
+                        }
                     }
+                    catch { }
                 };
             }
 
@@ -116,18 +121,12 @@ namespace Lampac.Controllers
         #region dlna.js
         [HttpGet]
         [Route("dlna.js")]
-        async public Task<ActionResult> Plugin()
+        public ActionResult Plugin()
         {
             if (!AppInit.conf.dlna.enable)
                 return Content(string.Empty);
 
-            if (!memoryCache.TryGetValue("ApiController:dlna.js", out string file))
-            {
-                file = await IO.File.ReadAllTextAsync("plugins/dlna.js");
-                memoryCache.Set("ApiController:dlna.js", file, DateTime.Now.AddMinutes(5));
-            }
-
-            return Content(file.Replace("{localhost}", host), contentType: "application/javascript; charset=utf-8");
+            return Content(FileCache.ReadAllText("plugins/dlna.js").Replace("{localhost}", host), contentType: "application/javascript; charset=utf-8");
         }
         #endregion
 
@@ -155,12 +154,21 @@ namespace Lampac.Controllers
         #region removeClientEngine
         async static Task removeClientEngine()
         {
-            if (torrentEngine != null && torrentEngine.Torrents.Count(i => i.State != TorrentState.Stopped && i.State != TorrentState.Stopping && i.State != TorrentState.Error) == 0)
+            try
             {
-                await torrentEngine.StopAllAsync();
-                torrentEngine.Dispose();
-                torrentEngine = null;
+                if (torrentEngine != null && torrentEngine.Torrents.Count(i => i.State != TorrentState.Stopped && i.State != TorrentState.Stopping && i.State != TorrentState.Error) == 0)
+                {
+                    try
+                    {
+                        await torrentEngine.StopAllAsync();
+                    }
+                    catch { }
+
+                    torrentEngine.Dispose();
+                    torrentEngine = null;
+                }
             }
+            catch { }
         }
         #endregion
 
@@ -431,7 +439,7 @@ namespace Lampac.Controllers
                 }
 
                 Directory.CreateDirectory("cache/torrent");
-                await IO.File.WriteAllBytesAsync($"cache/torrent/{hash}", data);
+                IO.File.WriteAllBytes($"cache/torrent/{hash}", data);
                 await removeClientEngine();
 
                 return Json(Torrent.Load(data).Files);
@@ -532,33 +540,37 @@ namespace Lampac.Controllers
                     #region TorrentStateChanged
                     manager.TorrentStateChanged += async (s, e) =>
                     {
-                        if (e != null && e.NewState == TorrentState.Seeding)
-                            await e.TorrentManager.StopAsync();
-
-                        //if (e != null && e.NewState == TorrentState.Error)
-                        //    await e.TorrentManager.StartAsync();
-
-                        if (e != null && (e.NewState == TorrentState.Stopped || e.NewState == TorrentState.Stopping))
+                        try
                         {
-                            try
-                            {
-                                IO.File.Delete($"cache/metadata/{e.TorrentManager.InfoHash.ToHex()}.torrent");
-                                IO.File.Delete($"cache/metadata/{e.TorrentManager.InfoHash.ToHex()}.json");
-                            }
-                            catch { }
+                            if (e != null && e.NewState == TorrentState.Seeding)
+                                await e.TorrentManager.StopAsync();
 
-                            foreach (var f in e.TorrentManager.Files)
+                            //if (e != null && e.NewState == TorrentState.Error)
+                            //    await e.TorrentManager.StartAsync();
+
+                            if (e != null && (e.NewState == TorrentState.Stopped || e.NewState == TorrentState.Stopping))
                             {
                                 try
                                 {
-                                    if (f.Priority == Priority.DoNotDownload && IO.File.Exists(f.FullPath))
-                                        IO.File.Delete(f.FullPath);
+                                    IO.File.Delete($"cache/metadata/{e.TorrentManager.InfoHash.ToHex()}.torrent");
+                                    IO.File.Delete($"cache/metadata/{e.TorrentManager.InfoHash.ToHex()}.json");
                                 }
                                 catch { }
-                            }
 
-                            await removeClientEngine();
+                                foreach (var f in e.TorrentManager.Files)
+                                {
+                                    try
+                                    {
+                                        if (f.Priority == Priority.DoNotDownload && IO.File.Exists(f.FullPath))
+                                            IO.File.Delete(f.FullPath);
+                                    }
+                                    catch { }
+                                }
+
+                                await removeClientEngine();
+                            }
                         }
+                        catch { }
                     };
                     #endregion
                 }
@@ -580,7 +592,7 @@ namespace Lampac.Controllers
                 else
                 {
                     Directory.CreateDirectory("cache/metadata/");
-                    await IO.File.WriteAllTextAsync($"cache/metadata/{manager.InfoHash.ToHex()}.json", JsonConvert.SerializeObject(indexs));
+                    IO.File.WriteAllText($"cache/metadata/{manager.InfoHash.ToHex()}.json", JsonConvert.SerializeObject(indexs));
 
                     for (int i = 0; i < manager.Files.Count; i++)
                     {
@@ -611,7 +623,7 @@ namespace Lampac.Controllers
                         if (array != null)
                         {
                             Directory.CreateDirectory($"{dlna_path}/thumbs");
-                            await IO.File.WriteAllBytesAsync($"{dlna_path}/thumbs/{CrypTo.md5(manager.Torrent.Name)}.jpg", array);
+                            IO.File.WriteAllBytes($"{dlna_path}/thumbs/{CrypTo.md5(manager.Torrent.Name)}.jpg", array);
                         }
                     }
                     catch { }
@@ -639,7 +651,12 @@ namespace Lampac.Controllers
             var manager = torrentEngine.Torrents.FirstOrDefault(i => i.InfoHash.ToHex() == infohash);
             if (manager != null)
             {
-                await manager.StopAsync();
+                try
+                {
+                    await manager.StopAsync();
+                }
+                catch { }
+
                 await removeClientEngine();
             }
 

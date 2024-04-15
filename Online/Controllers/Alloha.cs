@@ -142,8 +142,11 @@ namespace Lampac.Controllers.LITE
                 #endregion
 
                 var root = await HttpClient.Get<JObject>(uri, timeoutSeconds: 8, proxy: proxyManager.Get(), headers: httpHeaders(init));
-                if (root == null || !root.ContainsKey("data"))
+                if (root == null)
                     return OnError("json", proxyManager);
+
+                if (!root.ContainsKey("data"))
+                    return OnError("data");
 
                 var data = root["data"];
                 string default_audio = data.Value<string>("default_audio");
@@ -157,7 +160,7 @@ namespace Lampac.Controllers.LITE
 
                     void setvideo() {
                         string oiha = h264.Replace("/oihs/", "/oiha/"); // как бы мы жили без костелей
-                        _cache.m3u8 = init.oiha && playlist_file.Contains(oiha) ? oiha : h264;
+                        _cache.m3u8 = init.m4s && playlist_file.Contains(oiha) ? oiha : h264;
                     }
 
                     if (string.IsNullOrEmpty(h264))
@@ -209,8 +212,11 @@ namespace Lampac.Controllers.LITE
                         return default;
 
                     var root = await HttpClient.Get<JObject>($"{init.apihost}/?token={init.token}&name={HttpUtility.UrlEncode(title)}&list={(serial == 1 ? "serial" : "movie")}", timeoutSeconds: 8, proxy: proxyManager.Get(), headers: httpHeaders(init));
-                    if (root == null || !root.ContainsKey("data"))
+                    if (root == null)
                         return (true, 0, null);
+
+                    if (!root.ContainsKey("data"))
+                        return default;
 
                     foreach (var item in root["data"])
                     {
@@ -235,8 +241,11 @@ namespace Lampac.Controllers.LITE
                 else
                 {
                     var root = await HttpClient.Get<JObject>($"{init.apihost}/?token={init.token}&kp={kinopoisk_id}&imdb={imdb_id}", timeoutSeconds: 8, proxy: proxyManager.Get(), headers: httpHeaders(init));
-                    if (root == null || !root.ContainsKey("data"))
+                    if (root == null)
                         return (true, 0, null);
+
+                    if (!root.ContainsKey("data"))
+                        return default;
 
                     res.data = root.GetValue("data");
                     res.category_id = res.data.Value<int>("category");

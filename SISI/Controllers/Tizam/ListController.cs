@@ -1,7 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Caching.Memory;
 using System.Linq;
 using System.Web;
 using Lampac.Models.SISI;
@@ -45,13 +44,13 @@ namespace Lampac.Controllers.Tizam
                 playlists = Playlist(html);
 
                 if (playlists.Count == 0)
-                    return OnError("playlists", proxyManager);
+                    return OnError("playlists", proxyManager, pg > 1);
 
                 proxyManager.Success();
                 hybridCache.Set(memKey, playlists, cacheTime(60));
             }
 
-            return OnResult(playlists, null);
+            return OnResult(playlists, null, plugin: "tizam");
         }
 
 
@@ -59,19 +58,19 @@ namespace Lampac.Controllers.Tizam
         {
             var playlists = new List<PlaylistItem>() { Capacity = 25 };
 
-            foreach (string row in Regex.Split(html.Split("id=\"pagination\"")[0], "item-video").Skip(1))
+            foreach (string row in Regex.Split(html.Split("id=\"pagination\"")[0], "video-item").Skip(1))
             {
-                if (row.Contains("class=\"premicon\""))
+                if (row.Contains("pin--premium"))
                     continue;
 
-                string title = Regex.Match(row, "class=\"title\"([^>]+)?>([^<]+)<").Groups[2].Value;
-                string href = Regex.Match(row, "href=\"/([^\"]+)\" class=\"link\"").Groups[1].Value;
+                string title = Regex.Match(row, "-name=\"name\">([^<]+)<").Groups[1].Value;
+                string href = Regex.Match(row, "href=\"/([^\"]+)\" itemprop=\"url\"").Groups[1].Value;
 
                 if (!string.IsNullOrEmpty(href) && !string.IsNullOrWhiteSpace(title))
                 {
                     string duration = Regex.Match(row, "itemprop=\"duration\" content=\"([^<]+)\"").Groups[1].Value;
 
-                    string img = Regex.Match(row, "class=\"thumb\" src=\"/([^\"]+)\"").Groups[1].Value;
+                    string img = Regex.Match(row, "class=\"item__img\" src=\"/([^\"]+)\"").Groups[1].Value;
                     if (string.IsNullOrEmpty(img))
                         continue;
 

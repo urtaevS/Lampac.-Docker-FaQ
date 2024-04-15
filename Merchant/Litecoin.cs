@@ -1,6 +1,5 @@
 ﻿using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
-using Lampac.Engine;
 using Lampac.Engine.CORE;
 using Newtonsoft.Json.Linq;
 using Microsoft.Extensions.Caching.Memory;
@@ -10,14 +9,18 @@ using Lampac.Models.Merchant.LtcWallet;
 using Shared;
 using System.Threading;
 using Shared.Model.Online;
+using Merchant;
+using IO = System.IO.File;
+using System.IO;
 
 namespace Lampac.Controllers.LITE
 {
-    public class Litecoin : BaseController
+    public class Litecoin : MerchantController
     {
         #region Litecoin
         static Litecoin()
         {
+            Directory.CreateDirectory("merchant/invoice/litecoin");
             ThreadPool.QueueUserWorkItem(async _ => await ChekTransactions());
         }
         #endregion
@@ -48,14 +51,15 @@ namespace Lampac.Controllers.LITE
             if (!AppInit.conf.Merchant.LtcWallet.enable || string.IsNullOrWhiteSpace(email))
                 return Content(string.Empty);
 
-            string pathEmail = $"merchant/invoice/litecoin/{CrypTo.md5(email.ToLower().Trim())}.email";
+            email = decodeEmail(email);
+            string pathEmail = $"merchant/invoice/litecoin/{CrypTo.md5(email)}.email";
             double buyprice = await LtcKurs();
 
-            if (System.IO.File.Exists(pathEmail))
+            if (IO.Exists(pathEmail))
             {
                 return Json(new
                 {
-                    payinaddress = System.IO.File.ReadAllText(pathEmail),
+                    payinaddress = IO.ReadAllText(pathEmail),
                     buyprice,
                     amount = AppInit.conf.Merchant.accessCost / buyprice
                 });
@@ -72,8 +76,8 @@ namespace Lampac.Controllers.LITE
                 }
                 else
                 {
-                    System.IO.File.WriteAllText(pathEmail, payinAddress);
-                    System.IO.File.WriteAllText($"merchant/invoice/litecoin/{payinAddress}.ltc", email.ToLower().Trim());
+                    IO.WriteAllText(pathEmail, payinAddress);
+                    IO.WriteAllText($"merchant/invoice/litecoin/{payinAddress}.ltc", email);
                 }
 
                 return Json(new
@@ -114,27 +118,14 @@ namespace Lampac.Controllers.LITE
 
                         try
                         {
-                            if (System.IO.File.Exists($"merchant/invoice/litecoin/{trans.txid}.txid"))
+                            if (IO.Exists($"merchant/invoice/litecoin/{trans.txid}.txid"))
                                 continue;
 
-                            string email = System.IO.File.ReadAllText($"merchant/invoice/litecoin/{trans.address}.ltc");
-                            System.IO.File.WriteAllText($"merchant/invoice/litecoin/{trans.txid}.txid", $"{email}\n{trans.address}");
+                            string email = IO.ReadAllText($"merchant/invoice/litecoin/{trans.address}.ltc");
+                            IO.WriteAllText($"merchant/invoice/litecoin/{trans.txid}.txid", $"{email}\n{trans.address}");
 
                             double cost = (double)AppInit.conf.Merchant.accessCost / (double)(AppInit.conf.Merchant.accessForMonths * 30);
-                            int addday = (int)((trans.amount * kurs) / cost);
-
-                            if (AppInit.conf.accsdb.accounts.TryGetValue(email, out DateTime ex))
-                            {
-                                ex = ex > DateTime.UtcNow ? ex.AddDays(addday) : DateTime.UtcNow.AddDays(addday);
-                                AppInit.conf.accsdb.accounts[email] = ex;
-                            }
-                            else
-                            {
-                                ex = DateTime.UtcNow.AddDays(addday);
-                                AppInit.conf.accsdb.accounts.TryAdd(email, ex);
-                            }
-
-                            await System.IO.File.AppendAllTextAsync("merchant/users.txt", $"{email},{ex.ToFileTimeUtc()},litecoin\n");
+                            PayConfirm(email, "litecoin", $"{trans.address} - {trans.txid}", days: (int)((trans.amount * kurs) / cost));
                         }
                         catch { }
                     }
