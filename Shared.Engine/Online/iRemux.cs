@@ -43,17 +43,17 @@ namespace Shared.Engine.Online
                     return null;
                 }
 
-                foreach (string row in search.Split("class=\"entry\"").Skip(1))
+                foreach (string row in search.Split("item--announce").Skip(1))
                 {
-                    var g = Regex.Match(row, "class=\"entry__title [^\"]+\"><a href=\"(https?://[^\"]+)\">([^<]+)</a>").Groups;
+                    var g = Regex.Match(row, "class=\"item__title( [^\"]+)?\"><a href=\"(?<link>https?://[^\"]+)\">(?<name>[^<]+)</a>").Groups;
 
-                    string name = g[2].Value.ToLower();
+                    string name = g["name"].Value.ToLower();
                     if (name.Contains("сезон") || name.Contains("серии") || name.Contains("серия"))
                         continue;
 
                     if ((!string.IsNullOrEmpty(title) && name.Contains(title.ToLower())) || (!string.IsNullOrEmpty(original_title) && name.Contains(original_title.ToLower())))
                     {
-                        if (string.IsNullOrEmpty(g[1].Value))
+                        if (string.IsNullOrEmpty(g["link"].Value))
                             continue;
 
                         if (name.Contains($"({year}/"))
@@ -62,14 +62,19 @@ namespace Shared.Engine.Online
                             {
                                 title = name,
                                 year = year.ToString(),
-                                href = g[1].Value
+                                href = g["link"].Value
                             });
                         }
                     }
                 }
 
                 if (result.similars.Count == 0)
+                {
+                    if (search.Contains(">Поиск по сайту<"))
+                        return new EmbedModel() { IsEmpty = true };
+
                     return null;
+                }
 
                 if (result.similars.Count > 1)
                     return result;
@@ -84,7 +89,7 @@ namespace Shared.Engine.Online
                 return null;
             }
 
-            string content = news.Split("id=\"msg\"")[1].Split("id=\"download")[0];
+            string content = news.Split("page__desc")[1].Split("page__dl")[0];
             if (!content.Contains("cloud.mail.ru/public/"))
                 return null;
 
@@ -96,7 +101,7 @@ namespace Shared.Engine.Online
         #region Html
         public string Html(EmbedModel? result, string? title, string? original_title, int year)
         {
-            if (result == null)
+            if (result == null || result.IsEmpty)
                 return string.Empty;
 
             string? enc_title = HttpUtility.UrlEncode(title);

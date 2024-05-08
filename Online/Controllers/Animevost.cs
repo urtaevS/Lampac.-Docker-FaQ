@@ -51,12 +51,15 @@ namespace Lampac.Controllers.LITE
                         }
                     }
 
-                    if (catalog.Count == 0)
+                    if (catalog.Count == 0 && !search.Contains("Поиск по сайту"))
                         return OnError();
 
                     proxyManager.Success();
-                    hybridCache.Set(memkey, catalog, cacheTime(40));
+                    hybridCache.Set(memkey, catalog, cacheTime(40, init: init));
                 }
+
+                if (catalog.Count == 0)
+                    return OnError();
 
                 if (catalog.Count == 1)
                     return LocalRedirect($"/lite/animevost?title={HttpUtility.UrlEncode(title)}&uri={HttpUtility.UrlEncode(catalog[0].uri)}&s={catalog[0].s}&account_email={HttpUtility.UrlEncode(account_email)}");
@@ -100,7 +103,7 @@ namespace Lampac.Controllers.LITE
                         return OnError();
 
                     proxyManager.Success();
-                    hybridCache.Set(memKey, links, cacheTime(30));
+                    hybridCache.Set(memKey, links, cacheTime(30, init: init));
                 }
 
                 foreach (var l in links)
@@ -140,7 +143,7 @@ namespace Lampac.Controllers.LITE
                     return OnError(proxyManager);
 
                 proxyManager.Success();
-                hybridCache.Set(memKey, mp4, cacheTime(20));
+                hybridCache.Set(memKey, mp4, cacheTime(20, init: init));
             }
 
             return Redirect(HostStreamProxy(init, mp4, proxy: proxyManager.Get(), plugin: "animevost"));

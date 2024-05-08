@@ -11,24 +11,26 @@ namespace Shared.Engine.Online
     public class RezkaInvoke
     {
         #region RezkaInvoke
-        string? host;
+        string? host, scheme;
         string apihost;
-        bool usehls;
+        bool usehls, userprem;
         Func<string, ValueTask<string?>> onget;
         Func<string, string, ValueTask<string?>> onpost;
         Func<string, string> onstreamfile;
         Func<string, string>? onlog;
         Action? requesterror;
 
-        public RezkaInvoke(string? host, string apihost, bool hls, Func<string, ValueTask<string?>> onget, Func<string, string, ValueTask<string?>> onpost, Func<string, string> onstreamfile, Func<string, string>? onlog = null, Action? requesterror = null)
+        public RezkaInvoke(string? host, string apihost, string? scheme, bool hls, bool userprem, Func<string, ValueTask<string?>> onget, Func<string, string, ValueTask<string?>> onpost, Func<string, string> onstreamfile, Func<string, string>? onlog = null, Action? requesterror = null)
         {
             this.host = host != null ? $"{host}/" : null;
             this.apihost = apihost;
+            this.scheme = scheme;
             this.onget = onget;
             this.onstreamfile = onstreamfile;
             this.onlog = onlog;
             this.onpost = onpost;
             usehls = hls;
+            this.userprem = userprem;
             this.requesterror = requesterror;
         }
         #endregion
@@ -41,12 +43,12 @@ namespace Shared.Engine.Online
 
             if (string.IsNullOrWhiteSpace(link))
             {
-                if (kinopoisk_id > 0 || !string.IsNullOrEmpty(imdb_id))
-                {
-                    var res = await EmbedID(kinopoisk_id, imdb_id);
-                    if (res != null)
-                        return res;
-                }
+                //if (kinopoisk_id > 0 || !string.IsNullOrEmpty(imdb_id))
+                //{
+                //    var res = await EmbedID(kinopoisk_id, imdb_id);
+                //    if (res != null)
+                //        return res;
+                //}
 
                 string? search = await onget($"{apihost}/search/?do=search&subaction=search&q={HttpUtility.UrlEncode(clarification == 1 ? title : (original_title ?? title))}");
                 if (search == null)
@@ -70,9 +72,10 @@ namespace Shared.Engine.Online
 
                     if (title != null && (name.Contains(" / ") && name.Contains(title.ToLower()) || name == title.ToLower()))
                     {
+                        reservedlink = g[1].Value;
+
                         if (g[3].Value == year.ToString())
                         {
-                            reservedlink = g[1].Value;
                             link = reservedlink;
                             break;
                         }
@@ -85,6 +88,9 @@ namespace Shared.Engine.Online
                     {
                         if (result?.similar != null && result.similar.Count > 0)
                             return result;
+
+                        if (search.Contains("Результаты поиска"))
+                            return new EmbedModel() { IsEmpty = true };
 
                         return null;
                     }
@@ -140,7 +146,12 @@ namespace Shared.Engine.Online
                 return result;
 
             if (string.IsNullOrEmpty(link))
+            {
+                if (search.Contains("b-search__section_title"))
+                    return new EmbedModel() { IsEmpty = true };
+
                 return null;
+            }
 
             result!.id = Regex.Match(link, "/([0-9]+)-[^/]+\\.html").Groups[1].Value;
             result.content = await onget(link);
@@ -159,7 +170,7 @@ namespace Shared.Engine.Online
         #region Html
         public string Html(EmbedModel? result, long kinopoisk_id, string? imdb_id, string? title, string? original_title, int clarification, int year, int s, string? href, bool showstream)
         {
-            if (result == null)
+            if (result == null || result.IsEmpty)
                 return string.Empty;
 
             string? enc_title = HttpUtility.UrlEncode(title);
@@ -203,6 +214,12 @@ namespace Shared.Engine.Online
                     {
                         if (!string.IsNullOrEmpty(match.Groups[1].Value) && !string.IsNullOrEmpty(match.Groups[3].Value))
                         {
+                            if (!userprem && match.Groups[0].Value.Contains("prem_translator"))
+                            {
+                                match = match.NextMatch();
+                                continue;
+                            }
+
                             string favs = Regex.Match(result.content, "id=\"ctrl_favs\" value=\"([^\"]+)\"").Groups[1].Value;
                             string link = host + $"lite/rezka/movie?title={enc_title}&original_title={enc_original_title}&id={result.id}&t={match.Groups[1].Value}&favs={favs}";
                             string voice = match.Groups[3].Value.Trim();
@@ -241,9 +258,15 @@ namespace Shared.Engine.Online
                 #region Перевод
                 if (result.content.Contains("data-translator_id="))
                 {
-                    var match = new Regex("data-translator_id=\"([0-9]+)\">([^<]+)(<img title=\"([^\"]+)\" [^>]+/>)?").Match(result.content);
+                    var match = new Regex("<li [^>]+ data-translator_id=\"([0-9]+)\">([^<]+)(<img title=\"([^\"]+)\" [^>]+/>)?").Match(result.content);
                     while (match.Success)
                     {
+                        if (!userprem && match.Groups[0].Value.Contains("prem_translator"))
+                        {
+                            match = match.NextMatch();
+                            continue;
+                        }
+
                         string name = match.Groups[2].Value.Trim() + (string.IsNullOrWhiteSpace(match.Groups[4].Value) ? "" : $" ({match.Groups[4].Value})");
                         string link = host + $"lite/rezka/serial?kinopoisk_id={kinopoisk_id}&imdb_id={imdb_id}&title={enc_title}&original_title={enc_original_title}&clarification={clarification}&year={year}&href={enc_href}&id={result.id}&t={match.Groups[1].Value}";
 
@@ -354,9 +377,15 @@ namespace Shared.Engine.Online
                 {
                     if (result.content.Contains("data-translator_id="))
                     {
-                        var match = new Regex("data-translator_id=\"([0-9]+)\">([^<]+)(<img title=\"([^\"]+)\" [^>]+/>)?").Match(result.content);
+                        var match = new Regex("<li [^>]+ data-translator_id=\"([0-9]+)\">([^<]+)(<img title=\"([^\"]+)\" [^>]+/>)?").Match(result.content);
                         while (match.Success)
                         {
+                            if (!userprem && match.Groups[0].Value.Contains("prem_translator"))
+                            {
+                                match = match.NextMatch();
+                                continue;
+                            }
+
                             string name = match.Groups[2].Value.Trim() + (string.IsNullOrWhiteSpace(match.Groups[4].Value) ? "" : $" ({match.Groups[4].Value})");
                             string link = host + $"lite/rezka/serial?kinopoisk_id={kinopoisk_id}&imdb_id={imdb_id}&title={enc_title}&original_title={enc_original_title}&clarification={clarification}&year={year}&href={enc_href}&id={id}&t={match.Groups[1].Value}";
 
@@ -588,6 +617,9 @@ namespace Shared.Engine.Online
 
                 if (string.IsNullOrEmpty(link))
                     continue;
+
+                if (scheme == "http")
+                    link = link.Replace("https:", "http:");
 
                 links.Add(new ApiModel()
                 {

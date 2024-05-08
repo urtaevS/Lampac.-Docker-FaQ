@@ -167,7 +167,7 @@ namespace Lampac.Controllers.LITE
                 }
 
                 proxyManager.Success();
-                hybridCache.Set(memKey, urim3u8, cacheTime(20));
+                hybridCache.Set(memKey, urim3u8, cacheTime(20, init: init));
             }
 
             string m3u8 = HostStreamProxy(init, urim3u8, proxy: proxy, plugin: "hdvb");
@@ -241,7 +241,7 @@ namespace Lampac.Controllers.LITE
                     return OnError(proxyManager);
 
                 proxyManager.Success();
-                hybridCache.Set(memKey, urim3u8, cacheTime(20));
+                hybridCache.Set(memKey, urim3u8, cacheTime(20, init: init));
             }
 
             if (play)
@@ -258,19 +258,21 @@ namespace Lampac.Controllers.LITE
 
             if (!hybridCache.TryGetValue(memKey, out JArray root))
             {
-                root = await HttpClient.Get<JArray>($"{AppInit.conf.HDVB.host}/api/videos.json?token={AppInit.conf.HDVB.token}&id_kp={kinopoisk_id}", timeoutSeconds: 8, proxy: proxyManager.Get(), headers: httpHeaders(AppInit.conf.HDVB));
+                var init = AppInit.conf.HDVB;
+
+                root = await HttpClient.Get<JArray>($"{init.host}/api/videos.json?token={init.token}&id_kp={kinopoisk_id}", timeoutSeconds: 8, proxy: proxyManager.Get(), headers: httpHeaders(init));
                 if (root == null)
                 {
                     proxyManager.Refresh();
                     return null;
                 }
 
-                if (root.Count == 0)
-                    return null;
-
                 proxyManager.Success();
-                hybridCache.Set(memKey, root, cacheTime(40));
+                hybridCache.Set(memKey, root, cacheTime(40, init: init));
             }
+
+            if (root.Count == 0)
+                return null;
 
             return root;
         }

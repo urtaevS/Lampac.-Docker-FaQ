@@ -9,17 +9,21 @@ namespace JinEnergy.Engine
 {
     public static class JsHttpClient
     {
-        #region headers
-        static string headers(List<HeadersModel>? addHeaders)
+        #region httpReqHeaders
+        static Dictionary<string, string> httpReqHeaders(List<HeadersModel>? addHeaders)
         {
-            string hed = string.Empty;
+            var hed = new Dictionary<string, string>() 
+            {
+                ["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+            };
+
             if (addHeaders != null && addHeaders.Count > 0)
             {
                 foreach (var h in addHeaders)
-                    hed += $"'{h.name}':'{h.val}',";
+                    hed.TryAdd(h.name, h.val);
             }
 
-            return Regex.Replace(hed, ",$", "");
+            return hed;
         }
         #endregion
 
@@ -60,7 +64,7 @@ namespace JinEnergy.Engine
             try
             {
                 if (androidHttpReq && AppInit.IsAndrod && AppInit.JSRuntime != null)
-                    return await AppInit.JSRuntime.InvokeAsync<string?>("httpReq", url, false, new { dataType = "text", timeout = timeoutSeconds * 1000, headers = headers(addHeaders) });
+                    return await AppInit.JSRuntime.InvokeAsync<string?>("httpReq", url, false, new { dataType = "text", timeout = timeoutSeconds * 1000, headers = httpReqHeaders(addHeaders) });
 
                 using (var client = new HttpClient())
                 {
@@ -118,7 +122,7 @@ namespace JinEnergy.Engine
             try
             {
                 if (AppInit.IsAndrod && AppInit.JSRuntime != null)
-                    return await AppInit.JSRuntime.InvokeAsync<string?>("httpReq", url, data.ReadAsStringAsync().Result, new { dataType = "text", timeout = timeoutSeconds * 1000, headers = headers(addHeaders) });
+                    return await AppInit.JSRuntime.InvokeAsync<string?>("httpReq", url, data.ReadAsStringAsync().Result, new { dataType = "text", timeout = timeoutSeconds * 1000, headers = httpReqHeaders(addHeaders) });
 
                 using (var client = new HttpClient())
                 {
@@ -184,7 +188,7 @@ namespace JinEnergy.Engine
 
 
         #region StatusCode
-        async public static ValueTask<int> StatusCode(string? url)
+        async public static ValueTask<int> StatusCode(string? url, int timeout = 2)
         {
             try
             {
@@ -193,7 +197,7 @@ namespace JinEnergy.Engine
 
                 using (var client = new HttpClient(new HttpClientHandler() { AllowAutoRedirect = false }))
                 {
-                    client.Timeout = TimeSpan.FromMilliseconds(1500);
+                    client.Timeout = TimeSpan.FromSeconds(timeout);
                     client.MaxResponseContentBufferSize = 1_000_000;
 
                     using (HttpResponseMessage response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead))

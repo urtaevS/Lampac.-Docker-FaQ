@@ -52,6 +52,7 @@ namespace Lampac.Controllers
 
             file = file.Replace("name: 'Lampac'", $"name: '{init.name}'");
             file = Regex.Replace(file, "description: \\'([^\\']+)?\\'", $"description: '{init.description}'");
+            file = Regex.Replace(file, "apn: \\'([^\\']+)?\\'", $"apn: '{init.apn}'");
 
             return Content(file, contentType: "application/javascript; charset=utf-8");
         }
@@ -68,22 +69,25 @@ namespace Lampac.Controllers
 
 
         #region externalids
-        static Dictionary<string, string> externalids = new Dictionary<string, string>();
+        static Dictionary<string, string> externalids = null;
 
         [Route("externalids")]
         async public Task<ActionResult> Externalids(long id, string imdb_id, long kinopoisk_id, int serial)
         {
             if (id == 0)
-                return Json(new { });
+                return Content("{}");
 
-            if (IO.File.Exists("cache/externalids/master.json"))
+            if (externalids == null && IO.File.Exists("cache/externalids/master.json"))
             {
                 try
                 {
                     externalids = JsonConvert.DeserializeObject<Dictionary<string, string>>(IO.File.ReadAllText("cache/externalids/master.json"));
                 }
-                catch { externalids = new Dictionary<string, string>(); }
+                catch { }
             }
+
+            if (externalids == null)
+                externalids = new Dictionary<string, string>();
 
             #region getAlloha / getVSDN / getTabus
             async Task<string> getAlloha(string imdb)
@@ -211,7 +215,7 @@ namespace Lampac.Controllers
             }
             #endregion
 
-            return Json(new { imdb_id, kinopoisk_id = (kpid != null ? kpid : kinopoisk_id > 0 ? kinopoisk_id.ToString() : null) });
+            return Content($"{{\"imdb_id\":\"{imdb_id}\",\"kinopoisk_id\":\"{(kpid != null ? kpid : kinopoisk_id)}\"}}", "application/json; charset=utf-8");
         }
         #endregion
 
@@ -354,7 +358,7 @@ namespace Lampac.Controllers
 
             if (chos && IO.File.Exists("isdocker"))
             {
-                if ((await HttpClient.Get($"http://{AppInit.conf.localhost}:{AppInit.conf.listenport}/version", timeoutSeconds: 4)) != appversion)
+                if ((await HttpClient.Get($"http://{AppInit.conf.localhost}:{AppInit.conf.listenport}/version", timeoutSeconds: 4, headers: HeadersModel.Init("localrequest", System.IO.File.ReadAllText("passwd")))) != appversion)
                     chos = false;
             }
 
@@ -403,7 +407,7 @@ namespace Lampac.Controllers
                                long id, string imdb_id, long kinopoisk_id, string title, string original_title, string original_language, string source, int year, int serial, bool life)
         {
             string srq = uri.Replace("{localhost}", $"http://{AppInit.conf.localhost}:{AppInit.conf.listenport}");
-            var header = uri.Contains("{localhost}") ? HeadersModel.Init("xhost", host) : null;
+            var header = uri.Contains("{localhost}") ? HeadersModel.Init(("xhost", host), ("localrequest", IO.File.ReadAllText("passwd"))) : null;
 
             string res = await HttpClient.Get($"{srq}/{(srq.Contains("?") ? "&" : "?")}id={id}&imdb_id={imdb_id}&kinopoisk_id={kinopoisk_id}&title={HttpUtility.UrlEncode(title)}&original_title={HttpUtility.UrlEncode(original_title)}&original_language={original_language}&source={source}&year={year}&serial={serial}&checksearch=true", timeoutSeconds: 10, headers: header);
 
@@ -438,6 +442,9 @@ namespace Lampac.Controllers
 
                 if (balanser == "filmix")
                     quality = AppInit.conf.Filmix.pro ? quality : " - 480p";
+
+                if (balanser == "alloha")
+                    quality = AppInit.conf.Alloha.m4s ? quality : " ~ 1080p";
 
                 if (balanser == "collaps")
                     quality = AppInit.conf.Collaps.dash ? " ~ 1080p" : " ~ 720p";

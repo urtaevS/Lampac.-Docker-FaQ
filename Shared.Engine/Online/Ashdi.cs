@@ -38,8 +38,8 @@ namespace Shared.Engine.Online
                 return null;
             }
 
-            if (product.Contains("{\"message\":\"Product does not exist.\"}"))
-                return new EmbedModel();
+            if (product.Contains("Product does not exist"))
+                return new EmbedModel() { IsEmpty = true };
 
             string iframeuri = Regex.Match(product, "src=\"(https?://[^\"]+)\"").Groups[1].Value;
             if (string.IsNullOrWhiteSpace(iframeuri))
@@ -69,7 +69,7 @@ namespace Shared.Engine.Online
         #region Html
         public string Html(EmbedModel? md, long kinopoisk_id, string? title, string? original_title, int t, int s)
         {
-            if (md == null || (string.IsNullOrEmpty(md.content) && md.serial == null))
+            if (md == null || md.IsEmpty || (string.IsNullOrEmpty(md.content) && md.serial == null))
                 return string.Empty;
 
             bool firstjson = true;

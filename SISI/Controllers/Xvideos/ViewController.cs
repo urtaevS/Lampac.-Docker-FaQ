@@ -12,7 +12,7 @@ namespace Lampac.Controllers.Xvideos
     {
         [HttpGet]
         [Route("xds/vidosik")]
-        async public Task<ActionResult> Index(string uri)
+        async public Task<JsonResult> Index(string uri)
         {
             var init = AppInit.conf.Xvideos;
 
@@ -31,7 +31,7 @@ namespace Lampac.Controllers.Xvideos
                     return OnError("stream_links", proxyManager);
 
                 proxyManager.Success();
-                hybridCache.Set(memKey, stream_links, cacheTime(20));
+                hybridCache.Set(memKey, stream_links, cacheTime(20, init: init));
             }
 
             return OnResult(stream_links, init, proxy, plugin: "xds");

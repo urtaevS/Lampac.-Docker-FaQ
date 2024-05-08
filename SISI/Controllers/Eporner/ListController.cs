@@ -24,7 +24,7 @@ namespace Lampac.Controllers.Eporner
             var proxy = proxyManager.Get();
 
             pg += 1;
-            var cache = await InvokeCache<List<PlaylistItem>>($"epr:{search}:{sort}:{c}:{pg}", cacheTime(10), proxyManager, async res => 
+            var cache = await InvokeCache<List<PlaylistItem>>($"epr:{search}:{sort}:{c}:{pg}", cacheTime(10, init: init), proxyManager, async res => 
             {
                 string html = await EpornerTo.InvokeHtml(init.corsHost(), search, sort, c, pg, url => HttpClient.Get(init.cors(url), timeoutSeconds: 10, proxy: proxy, headers: httpHeaders(init)));
                 if (html == null)
@@ -41,7 +41,7 @@ namespace Lampac.Controllers.Eporner
             if (!cache.IsSuccess)
                 return OnError(cache.ErrorMsg, proxyManager, pg > 1 && string.IsNullOrEmpty(search));
 
-            return OnResult(cache.Value, string.IsNullOrEmpty(search) ? EpornerTo.Menu(host, sort, c) : null);
+            return OnResult(cache.Value, string.IsNullOrEmpty(search) ? EpornerTo.Menu(host, sort, c) : null, plugin: "epr");
         }
     }
 }

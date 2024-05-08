@@ -51,12 +51,15 @@ namespace Lampac.Controllers.LITE
                         }
                     }
 
-                    if (catalog.Count == 0)
+                    if (catalog.Count == 0 && !search.Contains(">Поиск по сайту<"))
                         return OnError();
 
                     proxyManager.Success();
-                    hybridCache.Set(memkey, catalog, cacheTime(40));
+                    hybridCache.Set(memkey, catalog, cacheTime(40, init: init));
                 }
+
+                if (catalog.Count == 0)
+                    return OnError();
 
                 if (catalog.Count == 1)
                     return LocalRedirect($"/lite/animebesst?title={HttpUtility.UrlEncode(title)}&uri={HttpUtility.UrlEncode(catalog[0].uri)}&s={catalog[0].s}&account_email={HttpUtility.UrlEncode(account_email)}");
@@ -100,7 +103,7 @@ namespace Lampac.Controllers.LITE
                         return OnError();
 
                     proxyManager.Success();
-                    hybridCache.Set(memKey, links, cacheTime(30));
+                    hybridCache.Set(memKey, links, cacheTime(30, init: init));
                 }
 
                 foreach (var l in links)
@@ -133,7 +136,7 @@ namespace Lampac.Controllers.LITE
             string memKey = $"animebesst:video:{uri}";
             if (!hybridCache.TryGetValue(memKey, out string hls))
             {
-                string iframe = await HttpClient.Get(init.cors($"https://{uri}"), timeoutSeconds: 8, proxy: proxyManager.Get(), headers: httpHeaders(init));
+                string iframe = await HttpClient.Get(init.cors($"https://{uri}"), referer: init.host, timeoutSeconds: 8, proxy: proxyManager.Get(), headers: httpHeaders(init), httpversion: 2);
                 if (iframe == null)
                     return OnError(proxyManager);
 
@@ -142,7 +145,7 @@ namespace Lampac.Controllers.LITE
                     return OnError();
 
                 proxyManager.Success();
-                hybridCache.Set(memKey, hls, cacheTime(30));
+                hybridCache.Set(memKey, hls, cacheTime(30, init: init));
             }
 
             return Redirect(HostStreamProxy(init, hls, proxy: proxyManager.Get(), plugin: "animebesst"));

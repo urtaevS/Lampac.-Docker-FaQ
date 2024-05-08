@@ -1,12 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Lampac.Engine.CORE;
-using Lampac.Models.LITE.KinoPub;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
@@ -24,7 +24,7 @@ namespace Lampac.Engine
     {
         IServiceScope serviceScope;
 
-        public static string appversion => "113";
+        public static string appversion => "115";
 
         public HybridCache hybridCache { get; private set; }
 
@@ -65,7 +65,7 @@ namespace Lampac.Engine
                 return headers;
 
             string ip = HttpContext.Connection.RemoteIpAddress.ToString();
-            string account_email = Regex.Match(HttpContext.Request.QueryString.Value, "&account_email=([^&]+)").Groups[1].Value;
+            string account_email = HttpContext.Request.Query["account_email"].ToString() ?? string.Empty;
 
             foreach (var h in init.headers)
             {
@@ -109,16 +109,30 @@ namespace Lampac.Engine
         #endregion
 
         #region proxy
-        public string HostImgProxy(int width, int height, string uri, List<HeadersModel> headers = null)
+        public string HostImgProxy(string uri, int width = 0, int height = 0, List<HeadersModel> headers = null, string plugin = null)
         {
-            if (string.IsNullOrWhiteSpace(uri) || (width == 0 && height == 0)) 
+            if (string.IsNullOrWhiteSpace(uri) || !AppInit.conf.sisi.rsize) 
                 return uri;
+
+            var init = AppInit.conf.sisi;
+            width = Math.Max(width, init.widthPicture);
+            height = Math.Max(height, init.heightPicture);
+
+            if (plugin != null && init.rsize_disable != null && init.rsize_disable.Contains(plugin))
+                return uri;
+
+            if (!string.IsNullOrEmpty(init.rsize_host))
+            {
+                string sheme = uri.StartsWith("https:") ? "https" : "http";
+                return init.rsize_host.Replace("{width}", width.ToString()).Replace("{height}", height.ToString())
+                           .Replace("{sheme}", sheme).Replace("{uri}", Regex.Replace(uri, "^https?://", ""));
+            }
 
             uri = ProxyLink.Encrypt(uri, HttpContext.Connection.RemoteIpAddress.ToString(), headers);
 
             if (AppInit.conf.accsdb.enable)
             {
-                string account_email = Regex.Match(HttpContext.Request.QueryString.Value, "(\\?|&)account_email=([^&]+)").Groups[2].Value;
+                string account_email = Regex.Match(HttpContext.Request.QueryString.Value, "account_email=([^&]+)").Groups[1].Value;
                 if (!string.IsNullOrWhiteSpace(account_email))
                     uri = uri + (uri.Contains("?") ? "&" : "?") + $"account_email={account_email}";
             }
@@ -135,8 +149,11 @@ namespace Lampac.Engine
             if (!streamproxy && conf.geostreamproxy != null && conf.geostreamproxy.Count > 0)
             {
                 string country = GeoIP2.Country(HttpContext.Connection.RemoteIpAddress.ToString());
-                if (country != null && conf.geostreamproxy.Contains(country))
-                    streamproxy = true;
+                if (!string.IsNullOrEmpty(country) && country.Length == 2)
+                {
+                    if (conf.geostreamproxy.Contains("ALL") || conf.geostreamproxy.Contains(country))
+                        streamproxy = true;
+                }
             }
 
             if (streamproxy)
@@ -177,7 +194,7 @@ namespace Lampac.Engine
 
                 if (AppInit.conf.accsdb.enable)
                 {
-                    string account_email = Regex.Match(HttpContext.Request.QueryString.Value, "(\\?|&)account_email=([^&]+)").Groups[2].Value;
+                    string account_email = Regex.Match(HttpContext.Request.QueryString.Value, "account_email=([^&]+)").Groups[1].Value;
                     if (!string.IsNullOrWhiteSpace(account_email))
                         uri = uri + (uri.Contains("?") ? "&" : "?") + $"account_email={account_email}";
                 }
@@ -195,7 +212,12 @@ namespace Lampac.Engine
         async public ValueTask<CacheResult<T>> InvokeCache<T>(string key, TimeSpan time, ProxyManager proxyManager, Func<CacheResult<T>, ValueTask<dynamic>> onget, bool inmemory = false)
         {
             if (hybridCache.TryGetValue(key, out T _val))
+            {
+                HttpContext.Response.Headers.TryAdd("X-InvokeCache", "HIT");
                 return new CacheResult<T>() { IsSuccess = true, Value = _val };
+            }
+
+            HttpContext.Response.Headers.TryAdd("X-InvokeCache", "MISS");
 
             var val = await onget.Invoke(new CacheResult<T>());
 
@@ -230,9 +252,9 @@ namespace Lampac.Engine
             return val;
         }
 
-        public TimeSpan cacheTime(int multiaccess, int home = 5, int mikrotik = 2)
+        public TimeSpan cacheTime(int multiaccess, int home = 5, int mikrotik = 2, BaseSettings init = null)
         {
-            int ctime = AppInit.conf.mikrotik ? mikrotik : AppInit.conf.multiaccess ? multiaccess : home;
+            int ctime = AppInit.conf.mikrotik ? mikrotik : AppInit.conf.multiaccess ? (init != null && init.cache_time > 0 ? init.cache_time : multiaccess) : home;
             if (ctime > multiaccess)
                 ctime = multiaccess;
 

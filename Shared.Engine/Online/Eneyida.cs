@@ -75,9 +75,10 @@ namespace Shared.Engine.Online
 
                     if (name == original_title?.ToLower())
                     {
+                        reservedlink = newslink;
+
                         if (g[2].Value == year.ToString())
                         {
-                            reservedlink = newslink;
                             link = reservedlink;
                             break;
                         }
@@ -87,7 +88,12 @@ namespace Shared.Engine.Online
                 if (string.IsNullOrEmpty(link))
                 {
                     if (string.IsNullOrEmpty(reservedlink))
-                        return result;
+                    {
+                        if (search.Contains(">Пошук по сайту<"))
+                            return new EmbedModel() { IsEmpty = true };
+
+                        return null;
+                    }
 
                     link = reservedlink;
                 }
@@ -136,7 +142,7 @@ namespace Shared.Engine.Online
         #region Html
         public string Html(EmbedModel? result, int clarification, string? title, string? original_title, int year, int t, int s, string? href)
         {
-            if (result == null)
+            if (result == null || result.IsEmpty)
                 return string.Empty;
 
             bool firstjson = true;

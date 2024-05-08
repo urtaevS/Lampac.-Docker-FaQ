@@ -148,11 +148,15 @@ namespace Lampac
 
         public string listenip = "any";
 
+        public int listenport = 9118;
+
+        public bool compression = true;
+
+        public string listen_sock = null;
+
         public string listenscheme = null;
 
         public string listenhost = null;
-
-        public int listenport = 9118;
 
         public string localhost = "127.0.0.1";
 
@@ -190,18 +194,19 @@ namespace Lampac
             },
             cache = new ServerproxyCacheConf() 
             {
-                img = true, img_rsize = true
+                img = false, img_rsize = true
             }
         };
 
-        public CronTime crontime = new CronTime() { updateLampaWeb = 20, clearCache = 20, updateTrackers = 120 };
+        public FileCacheConf fileCacheInactive = new FileCacheConf() { maxcachesize = 400, intervalclear = 4, img = 10, hls = 90, html = 5, torrent = 50 };
 
+        public DLNASettings dlna = new DLNASettings() 
+        { 
+            enable = true, allowedEncryption = true, path = "dlna",
+            autoupdatetrackers = true, addTrackersToMagnet = true, intervalUpdateTrackers = 90
+        };
 
-        public FileCacheConf fileCacheInactiveHour = new FileCacheConf() { html = 1, img = 1, torrent = 8, hls = 2 };
-
-        public DLNASettings dlna = new DLNASettings() { enable = true,  autoupdatetrackers = true, path = "dlna" };
-
-        public WebConf LampaWeb = new WebConf() { autoupdate = true, basetag = true, index = "lampa-main/index.html" };
+        public WebConf LampaWeb = new WebConf() { autoupdate = true, intervalupdate = 20, basetag = true, index = "lampa-main/index.html" };
 
         public OnlineConf online = new OnlineConf() 
         { 
@@ -213,7 +218,11 @@ namespace Lampac
 
         public MerchantsModel Merchant = new MerchantsModel();
 
-        public HashSet<Known> KnownProxies { get; set; }
+        public HashSet<Known> KnownProxies { get; set; } = new HashSet<Known>() 
+        {
+            new Known() { ip = "10.2.0.0", prefixLength = 16 },
+            new Known() { ip = "192.168.0.0", prefixLength = 16 }
+        };
 
         public bool real_ip_cf { get; set; }
 

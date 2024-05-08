@@ -1,11 +1,11 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Memory;
+using Shared.Engine;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using System.Web;
 
 namespace Lampac.Engine.Middlewares
 {
@@ -22,6 +22,9 @@ namespace Lampac.Engine.Middlewares
 
         public Task Invoke(HttpContext httpContext)
         {
+            if (httpContext.Request.Headers.TryGetValue("localrequest", out var _localpasswd) && _localpasswd.ToString() == FileCache.ReadAllText("passwd"))
+                return _next(httpContext);
+
             #region manifest / admin
             if (!File.Exists("module/manifest.json"))
             {
@@ -37,7 +40,7 @@ namespace Lampac.Engine.Middlewares
                 if (httpContext.Request.Path.Value.StartsWith("/admin/auth"))
                     return _next(httpContext);
 
-                if (httpContext.Request.Cookies.TryGetValue("passwd", out string passwd) && passwd == File.ReadAllText("passwd"))
+                if (httpContext.Request.Cookies.TryGetValue("passwd", out string passwd) && passwd == FileCache.ReadAllText("passwd"))
                     return _next(httpContext);
 
                 httpContext.Response.Redirect("/admin/auth");
@@ -48,16 +51,13 @@ namespace Lampac.Engine.Middlewares
             if (!AppInit.conf.weblog && !AppInit.conf.rch.enable && httpContext.Request.Path.Value.StartsWith("/ws"))
                 return httpContext.Response.WriteAsync("disabled", httpContext.RequestAborted);
 
-            if (httpContext.Connection.RemoteIpAddress.ToString() == AppInit.conf.localhost)
-                return _next(httpContext);
-
             string jacpattern = "^/(api/v2.0/indexers|api/v1.0/|toloka|rutracker|rutor|torrentby|nnmclub|kinozal|bitru|selezen|megapeer|animelayer|anilibria|anifilm|toloka|lostfilm|baibako|hdrezka)";
 
-            if (!string.IsNullOrWhiteSpace(AppInit.conf.apikey))
+            if (!string.IsNullOrEmpty(AppInit.conf.apikey))
             {
                 if (Regex.IsMatch(httpContext.Request.Path.Value, jacpattern))
                 {
-                    if (AppInit.conf.apikey != Regex.Match(httpContext.Request.QueryString.Value, "(\\?|&)apikey=([^&]+)").Groups[2].Value)
+                    if (AppInit.conf.apikey != httpContext.Request.Query["apikey"])
                         return Task.CompletedTask;
                 }
             }
@@ -67,15 +67,17 @@ namespace Lampac.Engine.Middlewares
                 if (!string.IsNullOrEmpty(AppInit.conf.accsdb.whitepattern) && Regex.IsMatch(httpContext.Request.Path.Value, AppInit.conf.accsdb.whitepattern, RegexOptions.IgnoreCase))
                     return _next(httpContext);
 
+                if (Regex.IsMatch(httpContext.Request.Path.Value, jacpattern))
+                    return _next(httpContext);
+
                 if (httpContext.Request.Path.Value.EndsWith("/personal.lampa"))
                     return _next(httpContext);
 
-                if (httpContext.Request.Path.Value != "/" && !Regex.IsMatch(httpContext.Request.Path.Value, jacpattern) && 
-                    !Regex.IsMatch(httpContext.Request.Path.Value, "^/((ts|ws|headers|myip|version)(/|$)|extensions|(streampay|b2pay|cryptocloud|freekassa|litecoin)/|lite/(filmixpro|fxapi/lowlevel/|kinopubpro|vokinotk)|lampa-(main|lite)/app\\.min\\.js|[a-zA-Z]+\\.js|msx/start\\.json|samsung\\.wgt)"))
+                if (httpContext.Request.Path.Value != "/" && !Regex.IsMatch(httpContext.Request.Path.Value, "^/((ts|ws|headers|myip|version|rch/result)(/|$)|extensions|(streampay|b2pay|cryptocloud|freekassa|litecoin)/|lite/(filmixpro|fxapi/lowlevel/|kinopubpro|vokinotk)|lampa-(main|lite)/app\\.min\\.js|[a-zA-Z]+\\.js|msx/start\\.json|samsung\\.wgt)"))
                 {
                     bool limitip = false;
                     HashSet<string> ips = null;
-                    string account_email = HttpUtility.UrlDecode(Regex.Match(httpContext.Request.QueryString.Value, "(\\?|&)account_email=([^&]+)").Groups[2].Value)?.ToLower()?.Trim();
+                    string account_email = httpContext.Request.Query["account_email"].ToString()?.ToLower()?.Trim() ?? string.Empty;
 
                     bool userfindtoaccounts = AppInit.conf.accsdb.accounts.TryGetValue(account_email, out DateTime ex);
 

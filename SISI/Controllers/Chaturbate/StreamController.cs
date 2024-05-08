@@ -12,7 +12,7 @@ namespace Lampac.Controllers.Chaturbate
     {
         [HttpGet]
         [Route("chu/potok")]
-        async public Task<ActionResult> Index(string baba)
+        async public Task<JsonResult> Index(string baba)
         {
             var init = AppInit.conf.Chaturbate;
 
@@ -30,7 +30,7 @@ namespace Lampac.Controllers.Chaturbate
                     return OnError("stream_links", proxyManager);
 
                 proxyManager.Success();
-                hybridCache.Set(memKey, stream_links, cacheTime(10));
+                hybridCache.Set(memKey, stream_links, cacheTime(10, init: init));
             }
 
             return OnResult(stream_links, init, proxy);

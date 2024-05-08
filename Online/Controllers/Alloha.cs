@@ -10,6 +10,7 @@ using Lampac.Models.LITE.Alloha;
 using Online;
 using Shared.Engine.CORE;
 using Shared.Model.Templates;
+using System.Text.RegularExpressions;
 
 namespace Lampac.Controllers.LITE
 {
@@ -44,7 +45,7 @@ namespace Lampac.Controllers.LITE
                     string link = $"{host}/lite/alloha/video?t={translation.Key}" + defaultargs;
                     string streamlink = $"{link.Replace("/video", "/video.m3u8")}&play=true";
 
-                    bool uhd = translation.Value["uhd"].ToString() == "True";
+                    bool uhd = translation.Value["uhd"].ToString() == "True" && AppInit.conf.Alloha.m4s;
                     mtpl.Append(translation.Value["name"].ToString(), link, "call", streamlink, voice_name: uhd ? "2160p" :translation.Value["quality"].ToString());
                 }
 
@@ -149,22 +150,45 @@ namespace Lampac.Controllers.LITE
                     return OnError("data");
 
                 var data = root["data"];
+                bool uhd = data.Value<bool>("4k");
                 string default_audio = data.Value<string>("default_audio");
-                string subtitle = data.Value<string>("subtitle");
                 string playlist_file = data.Value<string>("playlist_file");
 
+                #region subtitle
+                try
+                {
+                    var subtitles = new SubtitleTpl();
+
+                    foreach (var sub in data["subtitle"])
+                        subtitles.Append(sub.Value<string>("label"), sub.Value<string>("url"));
+
+                    _cache.subtitle = subtitles.ToHtml();
+                }
+                catch { }
+                #endregion
+
+                bool isav1 = false;
                 foreach (var item in data["file"])
                 {
+                    string av1 = item.Value<string>("av1");
                     string h264 = item.Value<string>("h264");
                     string audio = item.Value<string>("audio");
 
-                    void setvideo() {
-                        string oiha = h264.Replace("/oihs/", "/oiha/"); // как бы мы жили без костелей
-                        _cache.m3u8 = init.m4s && playlist_file.Contains(oiha) ? oiha : h264;
-                    }
+                    void setvideo()
+                    {
+                        if (uhd && init.m4s && !string.IsNullOrEmpty(av1))
+                        {
+                            isav1 = true;
+                            _cache.m3u8 = av1;
+                        }
+                        else
+                        {
+                            string _stream = string.IsNullOrEmpty(h264) ? av1 : h264;
 
-                    if (string.IsNullOrEmpty(h264))
-                        continue;
+                            if (!string.IsNullOrEmpty(_stream))
+                                _cache.m3u8 = _stream;
+                        }
+                    }
 
                     if (string.IsNullOrEmpty(_cache.m3u8))
                         setvideo();
@@ -179,11 +203,28 @@ namespace Lampac.Controllers.LITE
                     break;
                 }
 
-                if (!string.IsNullOrEmpty(subtitle) && subtitle.Contains(".vtt"))
-                    _cache.subtitle = "{\"label\": \"По умолчанию\",\"url\": \"" + subtitle + "\"}";
+                // где 4k Лебовски?
+                if (uhd && init.m4s && !isav1)
+                {
+                    string _m3u8 = string.Empty;
+
+                    if (playlist_file.StartsWith("http"))
+                        _m3u8 = playlist_file;
+                    else
+                    {
+                        if (!string.IsNullOrEmpty(default_audio))
+                            _m3u8 = Regex.Match(playlist_file, $"{{{default_audio}}}(https?://[^;\t\\{{ ]+/master.m3u8)").Groups[1].Value;
+
+                        if (string.IsNullOrEmpty(_m3u8))
+                            _m3u8 = Regex.Match(playlist_file, $"(https?://[^;\t\\{{ ]+/master.m3u8) or {_cache.m3u8}").Groups[1].Value;
+                    }
+
+                    if (!string.IsNullOrEmpty(_m3u8) && _m3u8.Contains(".m3u8"))
+                        _cache.m3u8 = _m3u8.Split(".m3u8")[0] + ".m3u8";
+                }
 
                 proxyManager.Success();
-                hybridCache.Set(memKey, _cache, cacheTime(10));
+                hybridCache.Set(memKey, _cache, cacheTime(10, init: init));
             }
 
             string m3u8 = HostStreamProxy(init, _cache.m3u8, proxy: proxyManager.Get(), plugin: "alloha");
@@ -252,7 +293,7 @@ namespace Lampac.Controllers.LITE
                 }
 
                 proxyManager.Success();
-                hybridCache.Set(memKey, res, cacheTime(40));
+                hybridCache.Set(memKey, res, cacheTime(40, init: init));
             }
 
             return (false, res.category_id, res.data);

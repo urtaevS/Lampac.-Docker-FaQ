@@ -10,6 +10,9 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.Caching.Memory;
 using Lampac.Models.LITE.Filmix;
 using Shared.Model.Online.Filmix;
+using Shared.Model.Online;
+using System.Text;
+using Lampac.Models.LITE;
 
 namespace Lampac.Controllers.LITE
 {
@@ -38,7 +41,7 @@ namespace Lampac.Controllers.LITE
         [Route("lite/filmix")]
         async public Task<ActionResult> Index(string title, string original_title, int clarification, string original_language, int year, int postid, int t, int? s = null)
         {
-            var init = AppInit.conf.Filmix;
+            var init = AppInit.conf.Filmix.Clone();
 
             if (!init.enable)
                 return OnError();
@@ -54,12 +57,27 @@ namespace Lampac.Controllers.LITE
             if (init.tokens != null && init.tokens.Length > 1)
                 token = init.tokens[Random.Shared.Next(0, init.tokens.Length)];
 
-            string livehash = string.Empty;
-            if (!init.rhub && init.livehash && !string.IsNullOrEmpty(init.token))
+            #region filmix.tv
+            if (!string.IsNullOrEmpty(init.user_apitv) && string.IsNullOrEmpty(init.token_apitv))
             {
-                token = string.Empty;
-                livehash = await getLiveHash();
+                string accessToken = await InvokeCache("filmix:accessToken", TimeSpan.FromHours(8), async () => 
+                {
+                    var content = new System.Net.Http.StringContent($"{{\"user_name\":\"{init.user_apitv}\",\"user_passw\":\"{init.passwd_apitv}\"}}", Encoding.UTF8, "application/json"); ;
+                    var jobject = await HttpClient.Post<JObject>("https://api.filmix.tv/api-fx/auth", content, timeoutSeconds: 8);
+                    return jobject?.GetValue("accessToken")?.ToString();
+                });
+
+                if (!string.IsNullOrEmpty(accessToken))
+                {
+                    init.pro = true;
+                    init.token_apitv = accessToken;
+                }
             }
+
+            string livehash = string.Empty;
+            if (!init.rhub && (init.livehash || !string.IsNullOrEmpty(init.token_apitv)))
+                livehash = await getLiveHash(init);
+            #endregion
 
             var oninvk = new FilmixInvoke
             (
@@ -74,7 +92,7 @@ namespace Lampac.Controllers.LITE
 
             if (postid == 0)
             {
-                var search = await InvokeCache<SearchResult>($"filmix:search:{title}:{original_title}:{clarification}", cacheTime(40), proxyManager, async res =>
+                var search = await InvokeCache<SearchResult>($"filmix:search:{title}:{original_title}:{clarification}", cacheTime(40, init: init), proxyManager, async res =>
                 {
                     if (rch.IsNotConnected())
                         return res.Fail(rch.connectionMsg);
@@ -91,7 +109,7 @@ namespace Lampac.Controllers.LITE
                 postid = search.Value.id;
             }
 
-            var cache = await InvokeCache<RootObject>($"filmix:post:{postid}", cacheTime(20), proxyManager, inmemory: true, onget: async res =>
+            var cache = await InvokeCache<RootObject>($"filmix:post:{postid}", cacheTime(20, init: init), proxyManager, inmemory: true, onget: async res =>
             {
                 if (rch.IsNotConnected())
                     return res.Fail(rch.connectionMsg);
@@ -103,17 +121,28 @@ namespace Lampac.Controllers.LITE
         }
 
 
-        async ValueTask<string> getLiveHash()
+        async ValueTask<string> getLiveHash(FilmixSettings init)
         {
             string memKey = $"filmix:ChangeLink:hashfimix";
             if (!memoryCache.TryGetValue(memKey, out string hash))
             {
-                var init = AppInit.conf.Filmix;
-                string json = await HttpClient.Get($"{init.corsHost()}/api/v2/post/170245?user_dev_apk=2.0.1&user_dev_id=&user_dev_name=Xiaomi&user_dev_os=11&user_dev_token={init.token}&user_dev_vendor=Xiaomi");
-                hash = Regex.Match(json?.Replace("\\", ""), "/s/([^/]+)/").Groups[1].Value;
+                if (!string.IsNullOrEmpty(init.token_apitv))
+                {
+                    string json = await HttpClient.Get("https://api.filmix.tv/api-fx/post/171042/video-links", timeoutSeconds: 8, headers: HeadersModel.Init("Authorization", $"Bearer {init.token_apitv}"));
+                    hash = Regex.Match(json?.Replace("\\", ""), "/s/([^/]+)/").Groups[1].Value;
+                }
+                else if (!string.IsNullOrEmpty(init.token))
+                {
+                    string json = await HttpClient.Get($"{init.corsHost()}/api/v2/post/171042?user_dev_apk=2.0.1&user_dev_id=&user_dev_name=Xiaomi&user_dev_os=11&user_dev_token={init.token}&user_dev_vendor=Xiaomi", timeoutSeconds: 8);
+                    hash = Regex.Match(json?.Replace("\\", ""), "/s/([^/]+)/").Groups[1].Value;
+                }
+                else
+                {
+                    return null;
+                }
 
-                if (!string.IsNullOrWhiteSpace(hash))
-                    memoryCache.Set(memKey, hash, DateTime.Now.AddHours(4));
+                if (init.livehash && !string.IsNullOrWhiteSpace(hash))
+                    memoryCache.Set(memKey, hash, DateTime.Now.AddHours(2));
             }
 
             return hash;

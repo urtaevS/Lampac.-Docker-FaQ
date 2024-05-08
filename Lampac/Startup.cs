@@ -76,10 +76,13 @@ namespace Lampac
                 options.MinimumSameSitePolicy = SameSiteMode.None;
             });
 
-            services.AddResponseCompression(options =>
+            if (AppInit.conf.compression)
             {
-                options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(new[] { "application/vnd.apple.mpegurl", "image/svg+xml" });
-            });
+                services.AddResponseCompression(options =>
+                {
+                    options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(new[] { "application/vnd.apple.mpegurl", "image/svg+xml" });
+                });
+            }
 
             services.AddSignalR();
 
@@ -117,52 +120,6 @@ namespace Lampac
             HybridCache.Configure(memory);
             ProxyManager.Configure(memory);
             HttpClient.httpClientFactory = httpClientFactory;
-            bool manifestload = File.Exists("module/manifest.json");
-
-            if (manifestload)
-            {
-                HttpClient.onlog += (e, log) => soks.SendLog(log, "http");
-                RchClient.hub += (e, req) => soks.hubClients?.Client(req.connectionId)?.SendAsync("RchClient", req.rchId, req.url, req.data);
-            }
-
-            if (!File.Exists("passwd"))
-                File.WriteAllText("passwd", Guid.NewGuid().ToString());
-
-            try
-            {
-                if (manifestload && AppInit.conf.puppeteer.enable)
-                {
-                    ThreadPool.QueueUserWorkItem(async _ =>
-                    {
-                        try
-                        {
-                            if (string.IsNullOrWhiteSpace(AppInit.conf.puppeteer.executablePath))
-                                await new BrowserFetcher().DownloadAsync();
-
-                            if (PuppeteerTo.IsKeepOpen)
-                                PuppeteerTo.LaunchKeepOpen();
-                        }
-                        catch (Exception ex) { Console.WriteLine(ex); }
-                    });
-                }
-            }
-            catch { }
-
-            if (manifestload)
-            {
-                Console.WriteLine(JsonConvert.SerializeObject(AppInit.conf, Formatting.Indented, new JsonSerializerSettings()
-                {
-                    //DefaultValueHandling = DefaultValueHandling.Ignore,
-                    NullValueHandling = NullValueHandling.Ignore
-                }));
-
-                ThreadPool.GetMinThreads(out int workerThreads, out int completionPortThreads);
-
-                if (AppInit.conf.multiaccess)
-                    ThreadPool.SetMinThreads(Math.Max(400, workerThreads), Math.Max(200, completionPortThreads));
-                else
-                    ThreadPool.SetMinThreads(Math.Max(50, workerThreads), Math.Max(20, completionPortThreads));
-            }
 
             app.UseDeveloperExceptionPage();
 
@@ -200,7 +157,10 @@ namespace Lampac
             #endregion
 
             app.UseRouting();
-            app.UseResponseCompression();
+
+            if (AppInit.conf.compression)
+                app.UseResponseCompression();
+
             app.UseModHeaders();
             app.UseStaticFiles();
             app.UseAccsdb();
@@ -208,6 +168,7 @@ namespace Lampac
             app.UseProxyIMG();
             app.UseProxyAPI();
             app.UseModule();
+            app.UseCache();
 
             app.UseEndpoints(endpoints =>
             {

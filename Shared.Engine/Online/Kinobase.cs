@@ -54,9 +54,11 @@ namespace Shared.Engine.Online
 
                 if (g[1].Value.ToLower().Trim() == title.ToLower())
                 {
-                    reservedlink = Regex.Match(row, "href=\"/([^\"]+)\"").Groups[1].Value;
-                    if (string.IsNullOrEmpty(reservedlink))
+                    string rlnk = Regex.Match(row, "href=\"/([^\"]+)\"").Groups[1].Value;
+                    if (string.IsNullOrEmpty(rlnk))
                         continue;
+
+                    reservedlink = rlnk;
 
                     if (g[2].Value == year.ToString())
                     {
@@ -69,7 +71,12 @@ namespace Shared.Engine.Online
             if (string.IsNullOrEmpty(link))
             {
                 if (string.IsNullOrEmpty(reservedlink))
+                {
+                    if (content.Contains(">По запросу"))
+                        return new EmbedModel() { IsEmpty = true };
+
                     return null;
+                }
 
                 link = reservedlink;
             }
@@ -121,7 +128,7 @@ namespace Shared.Engine.Online
         #region Html
         public string Html(EmbedModel? md, string? title, int year, int s)
         {
-            if (md == null)
+            if (md == null || md.IsEmpty)
                 return string.Empty;
 
             bool firstjson = true;
@@ -154,7 +161,7 @@ namespace Shared.Engine.Online
 
                 if (md.content.Contains("]{") && md.content.Contains(";"))
                 {
-                    foreach (var quality in new List<string> { "1080", "720", "480", "360" })
+                    foreach (string quality in new List<string> { "1080", "720", "480", "360" })
                     {
                         var g = new Regex($"\\[{quality}p?\\]([^\\[\\|\n\r,]+)").Match(md.content).Groups;
                         if (string.IsNullOrWhiteSpace(g[1].Value))
@@ -179,13 +186,15 @@ namespace Shared.Engine.Online
                 }
                 else
                 {
-                    foreach (Match m in Regex.Matches(md.content, $"\\[(1080|720|480|360)p?\\](\\{{[^\\}}]+\\}})?(https?://[^\\[\\|,;\n\r\t ]+\\.(mp4|m3u8))").Reverse())
+                    foreach (string quality in new List<string> { "1080", "720", "480", "360" })
                     {
-                        string link = m.Groups[3].Value;
+                        var g = Regex.Match(md.content, $"\\[({quality})p?\\](\\{{[^\\}}]+\\}})?(https?://[^\\[\\|,;\n\r\t ]+\\.(mp4|m3u8))").Groups;
+
+                        string link = g[3].Value;
                         if (string.IsNullOrEmpty(link))
                             continue;
 
-                        mtpl.Append($"{m.Groups[1].Value}p", onstreamfile(link), subtitles: subtitles);
+                        mtpl.Append($"{quality}p", onstreamfile(link), subtitles: subtitles);
                     }
                 }
 
@@ -197,15 +206,17 @@ namespace Shared.Engine.Online
                 #region getStreamLink
                 (string hls, string streansquality) getStreamLink(string _data)
                 {
-                    var streams = new List<(string link, string quality)>() { Capacity = 3 };
+                    var streams = new List<(string link, string quality)>() { Capacity = 4 };
 
-                    foreach (Match m in Regex.Matches(_data, $"\\[(1080|720|480|360)p?\\](\\{{[^\\}}]+\\}})?(https?://[^\\[\\|,;\n\r\t ]+\\.(mp4|m3u8))").Reverse())
+                    foreach (string quality in new List<string> { "1080", "720", "480", "360" })
                     {
-                        string link = m.Groups[3].Value;
+                        var g = Regex.Match(_data, $"\\[({quality})p?\\](\\{{[^\\}}]+\\}})?(https?://[^\\[\\|,;\n\r\t ]+\\.(mp4|m3u8))").Groups;
+
+                        string link = g[3].Value;
                         if (string.IsNullOrEmpty(link))
                             continue;
 
-                        streams.Add((onstreamfile.Invoke(link), $"{m.Groups[1].Value}p"));
+                        streams.Add((onstreamfile.Invoke(link), $"{quality}p"));
                     }
 
                     return (streams[0].link, "\"quality\": {" + string.Join(",", streams.Select(s => $"\"{s.quality}\":\"{s.link}\"")) + "}");
